@@ -3,9 +3,9 @@
 #
 # Description:
 #
-# The program STEPToXSection extracts the contour of the cross section between solids contained in the STEP file and the specified plane.
+# The program STEPToXSection extracts the contour of a planar cross section of solids contained in STEP files.
 #
-# Copyright(C) 2020 Alexander Leutgeb
+# Copyright(C) 2021 Alexander Leutgeb
 #
 # This library is free software; you can redistribute it and / or
 # modify it under the terms of the GNU Lesser General Public

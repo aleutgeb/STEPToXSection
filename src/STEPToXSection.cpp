@@ -3,9 +3,9 @@
 //
 // Description:
 //
-// The program STEPToXSection extracts the contour of the cross section between solids contained in the STEP file and the specified plane.
+// The program STEPToXSection extracts the contour of a planar cross section of solids contained in STEP files.
 //
-// Copyright(C) 2020 Alexander Leutgeb
+// Copyright(C) 2021 Alexander Leutgeb
 //
 // This library is free software; you can redistribute it and / or
 // modify it under the terms of the GNU Lesser General Public
@@ -97,7 +97,7 @@ void read(const std::string& inFile, std::vector<NamedSolid>& namedSolids) {
 	}
 }
 
-auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 4>& plane, const double linearDeflection) -> std::vector<std::array<double, 3>> {
+auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 4>& plane, const double deflection) -> std::vector<std::array<double, 3>> {
 	std::vector<std::array<double, 3>> points;
 	BRepAlgoAPI_Section section(compound, gp_Pln(plane[0], plane[1], plane[2], plane[3]), Standard_False);
 	section.ComputePCurveOn1(Standard_True);
@@ -108,7 +108,7 @@ auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 4
 	for (explorer.Init(section.Shape(), TopAbs_EDGE); explorer.More(); explorer.Next()) {
 		TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
 		BRepAdaptor_Curve curve{edge};
-		GCPnts_UniformDeflection discretizer(curve, linearDeflection, Standard_True);
+		GCPnts_UniformDeflection discretizer(curve, deflection, Standard_True);
 		if (discretizer.IsDone() && discretizer.NbPoints() > 0) {
 			int nbPoints = discretizer.NbPoints();
 			for (int i = 2; i <= nbPoints; i++) {
@@ -153,7 +153,7 @@ void writePLY(const std::string& outFile, const std::array<double, 4>& plane, co
 }
 
 void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolids, const std::vector<std::string>& names,
-		const double linearDeflection, const std::array<double, 4>& plane, const std::string& format) {
+		const double deflection, const std::array<double, 4>& plane, const std::string& format) {
 	TopoDS_Compound compound;
 	TopoDS_Builder builder;
 	builder.MakeCompound(compound);
@@ -167,20 +167,20 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 			builder.Add(compound, iter->solid);
 		}
 	}
-	std::vector<std::array<double, 3>> points{computeXSection(compound, plane, linearDeflection)};
+	std::vector<std::array<double, 3>> points{computeXSection(compound, plane, deflection)};
 	if (format == "xyz") writeXYZ(outFile, plane, points);
 	else if (format == "ply") writePLY(outFile, plane, points);
 }
 
 int main(int argc, char* argv[]) {
-	cxxopts::Options options{"STEPToXSection", "Extracts the contour of the cross section between solids contained in the STEP file and the specified plane"};
+	cxxopts::Options options{"STEPToXSection", "Extracts the contour of a planar cross section of solids contained in the STEP file"};
 	options.add_options()
 			("i,in", "Input file", cxxopts::value<std::string>())
 			("o,out", "Output file", cxxopts::value<std::string>())
 			("f,format", "Output file format (xyz or ply)", cxxopts::value<std::string>()->default_value("xyz"))
 			("c,content", "List content (solids)")
 			("s,select", "Select solids by name (comma seperated list)", cxxopts::value<std::vector<std::string>>())
-			("l,linear", "Linear deflection", cxxopts::value<double>())
+			("d,deflection", "deflection", cxxopts::value<double>())
 			("p,plane", "Plane (a,b,c,d), in which a*x + b*y + c*z + d = 0", cxxopts::value<std::vector<double>>())
 			("h,help", "Print usage");
 	try {
@@ -196,19 +196,19 @@ int main(int argc, char* argv[]) {
 		}
 		else if (result.count("in") && result.count("out")) {
 			const auto inFile{result["in"].as<std::string>()}, outFile{result["out"].as<std::string>()};
-			if (!result.count("linear")) throw std::logic_error{std::string{"Missing option 'linear'"}};
+			if (!result.count("deflection")) throw std::logic_error{std::string{"Missing option 'deflection'"}};
 			if (!result.count("plane")) throw std::logic_error{std::string{"Missing option 'plane'"}};
 			std::vector<double> plane{result["plane"].as<std::vector<double>>()};
 			if (plane.size() != 4) throw std::logic_error{std::string{"Wrong plane format (nx,ny,nz,d)"}};
 			const std::array<double, 4> planeVec{plane[0], plane[1], plane[2], plane[3]};
 			const auto format{result["format"].as<std::string>()};
 			if (format != "xyz" && format != "ply") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
-			const auto linearDeflection{result["linear"].as<double>()};
+			const auto deflection{result["deflection"].as<double>()};
 			std::vector<std::string> select;
 			if (result.count("select")) select = result["select"].as<std::vector<std::string>>();
 			std::vector<NamedSolid> namedSolids;
 			read(inFile, namedSolids);
-			write(outFile, namedSolids, select, linearDeflection, planeVec, format);
+			write(outFile, namedSolids, select, deflection, planeVec, format);
 		}
 		else std::cout << options.help() << std::endl;
 		return EXIT_SUCCESS;
