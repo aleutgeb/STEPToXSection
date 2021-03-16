@@ -4,8 +4,9 @@ The program STEPToXSection extracts the contour of a planar cross section of sol
 # Description
 The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. The contour is a list of line segments. The supported output file formats are ply and xyz. In the case of xyz, two consecutive vertices belong to the same edge.  STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
 
-![Image Solids](examples/basic_shapes/basic_shapes_solids.png){:width="400px"}
-![Image Cross-Section](examples/basic_shapes/basic_shapes_cross-section.png){:width="400px"}
+| Solids | Planar Cross-Section |
+| :---:  | :---:                |
+| ![Image Solids](examples/basic_shapes/basic_shapes_solids.png) | ![Image Cross-Section](examples/basic_shapes/basic_shapes_cross-section.png) |
 
 # Requirements
  * CMake installation (https://cmake.org)
