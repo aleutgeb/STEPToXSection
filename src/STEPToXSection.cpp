@@ -152,19 +152,33 @@ void writePLY(const std::string& outFile, const std::array<double, 4>& plane, co
 	ofs.close();
 }
 
-void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolids, const std::vector<std::string>& names,
+void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolids, const std::vector<std::string>& select,
 		const double deflection, const std::array<double, 4>& plane, const std::string& format) {
 	TopoDS_Compound compound;
 	TopoDS_Builder builder;
 	builder.MakeCompound(compound);
-	if (names.empty()) {
+	if (select.empty()) {
 		for (const auto& namedSolid : namedSolids) builder.Add(compound, namedSolid.solid);
 	}
 	else {
-		for (const auto& name : names) {
-			const auto iter = std::find_if(std::begin(namedSolids), std::end(namedSolids), [&](const auto& namesSolid) { return namesSolid.name == name; });
-			if (iter == std::end(namedSolids)) throw std::logic_error{std::string{"Could not find solid with name '"} + name + "'"};
-			builder.Add(compound, iter->solid);
+		for (const auto& sel : select) {
+			if (sel != "") {
+				if (sel[0] == '/') {
+					const auto iter = std::find_if(std::begin(namedSolids), std::end(namedSolids), [&](const auto& namesSolid) { return namesSolid.name == sel; });
+					if (iter == std::end(namedSolids)) throw std::logic_error{std::string{"Could not find solid with name '"} + sel + "'"};
+					builder.Add(compound, iter->solid);
+				}
+				else {
+					try {
+						int index{std::stoi(sel)};
+						if (index < 1 || index > namedSolids.size()) throw std::logic_error{std::string{"Index out of range: "} + sel};
+						builder.Add(compound, namedSolids[index - 1].solid);
+					}
+					catch (const std::invalid_argument&) {
+						throw std::logic_error{std::string("Invalid index: ") + sel};
+					}
+				}
+			}
 		}
 	}
 	std::vector<std::array<double, 3>> points{computeXSection(compound, plane, deflection)};
@@ -179,7 +193,7 @@ int main(int argc, char* argv[]) {
 			("o,out", "Output file", cxxopts::value<std::string>())
 			("f,format", "Output file format (xyz or ply)", cxxopts::value<std::string>()->default_value("xyz"))
 			("c,content", "List content (solids)")
-			("s,select", "Select solids by name (comma seperated list)", cxxopts::value<std::vector<std::string>>())
+			("s,select", "Select solids by name or index (comma seperated list, index starts with 1)", cxxopts::value<std::vector<std::string>>())
 			("d,deflection", "deflection", cxxopts::value<double>())
 			("p,plane", "Plane (a,b,c,d), in which a*x + b*y + c*z + d = 0", cxxopts::value<std::vector<double>>())
 			("h,help", "Print usage");

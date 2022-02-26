@@ -40,7 +40,7 @@ Usage:
   -o, --out arg         Output file
   -f, --format arg      Output file format (xyz or ply) (default: xyz)
   -c, --content         List content (solids)
-  -s, --select arg      Select solids by name (comma seperated list)
+  -s, --select arg      Select solids by name or index (comma seperated list, index starts with 1)
   -d, --deflection arg  deflection
   -p, --plane arg       Plane (a,b,c,d), in which a*x + b*y + c*z + d = 0
   -h, --help            Print usage
