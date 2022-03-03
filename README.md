@@ -7,9 +7,7 @@ The program STEPToXSection is a command line utility to export the contour of a 
 | Solids | Planar Cross-Section |
 | :---:  | :---: |
 | ![Image Solids](examples/spheres/solids.png) | ![Image Cross-Section](examples/spheres/cross_section.png) |
-| :---:  | :---: |
 | Positive Offset Curves | Negative Offset Curves |
-| :---:  | :---: |
 | ![Image Positive-Offset-Curves](examples/spheres/positive_offset_curves.png) | ![Image Negative-Offset-Curves](examples/spheres/negative_offset_curves.png) |
 
 # Requirements
