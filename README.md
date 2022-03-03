@@ -44,7 +44,7 @@ In order to change the default output format xyz the command line argument `-f p
 Following the help text from the command line:
 ```
 STEPToXSection.exe -h
-Extracts the contour of a planar cross section of solids contained in the STEP file
+Extracts the contour of a planar cross section of solids contained in the STEP file. Additionally it supports offsetting of the cross section contour.
 Usage:
   STEPToXSection [OPTION...]
 
