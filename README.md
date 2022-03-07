@@ -4,7 +4,7 @@ The program STEPToXSection extracts the contour of a planar cross section of sol
 # Description
 The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. Additionally it supports offsetting of the cross section contour. The contour is a list of line segments. The supported output file formats are ply and xyz. In the case of xyz, two consecutive vertices belong to the same edge. A popular viewer for the different file types is MeshLab (https://www.meshlab.net). STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
 
-The following examples were generated using the examples spheres.stp and bone_bocket.stp with the same values for the plane (-p) and deflection (-d). For example spheres.stp the offset values range from -5.0 to +10.0 and for example bone_bocket.stp the offset values range from -4.0 to +5.0. Example calls:
+The following graphics were generated using the examples spheres.stp and bone_bocket.stp with the same values for the plane (-p) and deflection (-d). For example spheres.stp the offset values range from -5.0 to +10.0 and for example bone_bocket.stp the offset values range from -4.0 to +5.0. Example calls:
 ```
 STEPToXSection.exe -i spheres.stp -o out.ply -f ply -p 1.0,0.0,0.0,0.0 -d 0.01 -t 1.0
 STEPToXSection.exe -i bone_bocket.stp -o out.ply -f ply -p 1.0,0.0,0.0,0.0 -d 0.01 -t 1.0
