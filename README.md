@@ -2,23 +2,45 @@
 The program STEPToXSection extracts the contour of a planar cross section of solids contained in STEP files. Additionally it supports offsetting of the cross section contour.
 
 # Description
-The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. Additionally it supports offsetting of the cross section contour. The contour is a list of line segments. The supported output file formats are ply and xyz. In the case of xyz, two consecutive vertices belong to the same edge.  STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
+The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. Additionally it supports offsetting of the cross section contour. The contour is a list of line segments. The supported output file formats are ply and xyz. In the case of xyz, two consecutive vertices belong to the same edge. A popular viewer for the different file types is MeshLab (https://www.meshlab.net). STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
 
-| Solids |
-| :---: |
-| ![Image Solids](examples/spheres/solids.png) |
+The following examples were generated using the examples spheres.stp and bone_bocket.stp with the same values for the plane (-p) and deflection (-d). For example spheres.stp the offset values range from -5.0 to +10.0 and for example bone_bocket.stp the offset values range from -4.0 to +5.0. Example calls:
+```
+STEPToXSection.exe -i spheres.stp -o out.ply -f ply -p 1.0,0.0,0.0,0.0 -d 0.01 -t 1.0
+STEPToXSection.exe -i bone_bocket.stp -o out.ply -f ply -p 1.0,0.0,0.0,0.0 -d 0.01 -t 1.0
+```
 
-| Planar Cross-Section |
+| Solids (example spheres) |
 | :---: |
-| ![Image Cross-Section](examples/spheres/cross_section.png) |
+| ![Image Solids-Spheres](examples/spheres/solids.png) |
 
-| Positive Offset Curves |
+| Planar cross-section (example spheres) |
 | :---: |
-| ![Image Positive-Offset-Curves](examples/spheres/positive_offset_curves.png) |
+| ![Image Cross-Section-Spheres](examples/spheres/cross_section.png) |
 
-| Negative Offset Curves |
+| Positive offset curves (example spheres) |
 | :---: |
-| ![Image Negative-Offset-Curves](examples/spheres/negative_offset_curves.png) |
+| ![Image Positive-Offset-Curves-Spheres](examples/spheres/positive_offset_curves.png) |
+
+| Negative offset curves (example spheres) |
+| :---: |
+| ![Image Negative-Offset-Curves-Spheres](examples/spheres/negative_offset_curves.png) |
+
+| Solid (example bone_pocket) |
+| :---: |
+| ![Image Solid-Bone-Pocket](examples/bone_pocket/solid.png) |
+
+| Planar cross-section (example bone_pocket) |
+| :---: |
+| ![Image Cross-Section-Bone-Pocket](examples/bone_pocket/cross_section.png) |
+
+| Positive offset curves (example bone_pocket) |
+| :---: |
+| ![Image Positive-Offset-Curves-Bone-Pocket](examples/bone_pocket/positive_offset_curves.png) |
+
+| Negative offset curves (example bone_pocket) |
+| :---: |
+| ![Image Negative-Offset-Curves-Bone-Pocket](examples/bone_pocket/negative_offset_curves.png) |
 
 # Requirements
  * CMake installation (https://cmake.org)

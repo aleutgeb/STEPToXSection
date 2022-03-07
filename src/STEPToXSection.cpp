@@ -27,6 +27,7 @@
 #include <TopoDS_Builder.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopExp_Explorer.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <XCAFApp_Application.hxx>
@@ -52,6 +53,7 @@
 #include <BRepFeat.hxx>
 #include <GeomLProp_SLProps.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <ShapeFix_Wire.hxx>
 #include <gp_Pln.hxx>
 #include <GCPnts_UniformDeflection.hxx>
 #include <vector>
@@ -147,10 +149,7 @@ auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
 	Handle(TopTools_HSequenceOfShape) edges{new TopTools_HSequenceOfShape{}};
 	Handle(TopTools_HSequenceOfShape) wires{new TopTools_HSequenceOfShape{}};
 	TopExp_Explorer explorer;
-	for (explorer.Init(shape, TopAbs_EDGE); explorer.More(); explorer.Next())
-	{
-		edges->Append(TopoDS::Edge(explorer.Current()));
-	}
+	for (explorer.Init(shape, TopAbs_EDGE); explorer.More(); explorer.Next()) edges->Append(TopoDS::Edge(explorer.Current()));
 	ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 0.0, Standard_True, wires);
 	for (int iWire{1}; iWire <= wires->Size(); ++iWire) result.emplace_back(TopoDS::Wire(wires->Value(iWire)));
 	return result;
@@ -158,56 +157,52 @@ auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
 
 auto computeXSectionWires(const TopoDS_Compound& compound, const gp_Pln& xsectionPlane) -> std::vector<TopoDS_Wire> {
 	BRepAlgoAPI_Section section(compound, xsectionPlane, Standard_False);
-	section.ComputePCurveOn1(Standard_True);
+	section.ComputePCurveOn2(Standard_True);
 	section.Approximation(Standard_True);
 	section.Build();
 	return convertToWires(section.Shape());
 }
 
-void discretizeWire(const TopoDS_Wire& wire, std::vector<std::array<double, 3>>& points, const double deflection) {
-	TopExp_Explorer explorer;
-	for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-		TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
-		BRepAdaptor_Curve curve{edge};
-		GCPnts_UniformDeflection discretizer(curve, deflection, Standard_True);
-		if (discretizer.IsDone() && discretizer.NbPoints() > 0) {
-			int nbPoints = discretizer.NbPoints();
-			for (int i = 2; i <= nbPoints; i++) {
-				const gp_Pnt p0{discretizer.Value(i - 1)};
-				const gp_Pnt p1{discretizer.Value(i)};
-				points.emplace_back(std::array<double, 3>{p0.X(), p0.Y(), p0.Z()});
-				points.emplace_back(std::array<double, 3>{p1.X(), p1.Y(), p1.Z()});
-			}
-		}
+void addPoints(const TopoDS_Wire& wire, std::vector<std::array<double, 3>>& points) {
+	BRepTools_WireExplorer wireExplorer;
+	std::vector<std::array<double, 3>> wirePoints;
+	for (wireExplorer.Init(wire); wireExplorer.More(); wireExplorer.Next()) {
+		const gp_Pnt p{BRep_Tool::Pnt(wireExplorer.CurrentVertex())};
+		wirePoints.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
+	}
+	for (auto i{0u}; i < wirePoints.size(); ++i) {
+		points.emplace_back(wirePoints[i]);
+		points.emplace_back(wirePoints[(i + 1) % wirePoints.size()]);
 	}
 }
 
 auto surfaceNormal(const TopoDS_Face& face) -> gp_Dir {
 	Standard_Real umin, umax, vmin, vmax;
 	BRepTools::UVBounds(face, umin, umax, vmin, vmax);
-	Handle(Geom_Surface) surface {BRep_Tool::Surface(face)};
+	Handle(Geom_Surface) surface{BRep_Tool::Surface(face)};
 	GeomLProp_SLProps props(surface, umin, vmin, 1, 0.01);
 	return props.Normal();
 }
 
-auto cutTwoFaces(const TopoDS_Face& origFace0, const TopoDS_Face& origFace1) -> std::vector<TopoDS_Face> {
+auto cutFaces(const TopoDS_Face& face, const std::vector<TopoDS_Face>& faces) -> std::vector<TopoDS_Face> {
 	std::vector<TopoDS_Face> result;
 	TopTools_ListOfShape arguments;
+	arguments.Append(face);
 	TopTools_ListOfShape tools;
-	TopoDS_Face face0{origFace0};
-	TopoDS_Face face1{origFace1};
-	if (surfaceNormal(face0).Dot(surfaceNormal(face1)) < 0.0) face1.Reverse();
-	arguments.Append(face0);
-	tools.Append(face1);
+	for (const auto& f : faces) {
+		TopoDS_Face newF{f};
+		if (surfaceNormal(face).Dot(surfaceNormal(newF)) < 0.0) newF.Reverse();
+		tools.Append(newF);
+	}
 	BRepAlgoAPI_Cut cut;
 	cut.SetArguments(arguments);
 	cut.SetTools(tools);
 	cut.Build();
-	TopoDS_Shape shape = cut.Shape();
-	ShapeUpgrade_UnifySameDomain unify(shape, Standard_True, Standard_True, Standard_False);
+	TopoDS_Shape shape{cut.Shape()};
+	ShapeUpgrade_UnifySameDomain unify{shape, Standard_True, Standard_True, Standard_False};
 	unify.Build();
 	shape = unify.Shape();
-	for (TopoDS_Iterator iter(shape); iter.More(); iter.Next()) {
+	for (TopoDS_Iterator iter{shape}; iter.More(); iter.Next()) {
 		if (iter.Value().ShapeType() == TopAbs_FACE) {
 			result.emplace_back(TopoDS::Face(iter.Value()));
 		}
@@ -228,11 +223,11 @@ auto uniteTwoFaces(const TopoDS_Face& origFace0, const TopoDS_Face& origFace1) -
 	fuse.SetArguments(arguments);
 	fuse.SetTools(tools);
 	fuse.Build();
-	TopoDS_Shape shape = fuse.Shape();
-	ShapeUpgrade_UnifySameDomain unify(shape, Standard_True, Standard_True, Standard_False);
+	TopoDS_Shape shape{fuse.Shape()};
+	ShapeUpgrade_UnifySameDomain unify{shape, Standard_True, Standard_True, Standard_False};
 	unify.Build();
 	shape = unify.Shape();
-	for (TopoDS_Iterator iter(shape); iter.More(); iter.Next()) {
+	for (TopoDS_Iterator iter{shape}; iter.More(); iter.Next()) {
 		if (iter.Value().ShapeType() == TopAbs_FACE) {
 			result.emplace_back(TopoDS::Face(iter.Value()));
 		}
@@ -240,7 +235,8 @@ auto uniteTwoFaces(const TopoDS_Face& origFace0, const TopoDS_Face& origFace1) -
 	return result;
 }
 
-void uniteFaces(const std::vector<TopoDS_Face>& faces, std::vector<std::array<double, 3>>& points, const double deflection) {
+auto uniteFaces(const std::vector<TopoDS_Face>& faces) -> std::vector<TopoDS_Face> {
+	std::vector<TopoDS_Face> result;
 	std::deque<TopoDS_Face> work;
 	std::copy(std::begin(faces), std::end(faces), std::back_inserter(work));
 	while (!work.empty()) {
@@ -256,16 +252,14 @@ void uniteFaces(const std::vector<TopoDS_Face>& faces, std::vector<std::array<do
 				break;
 			}
 		}
-		if (!united) {
-			for (const auto& wire : convertToWires(face)) discretizeWire(wire, points, deflection);
-		}
+		if (!united) result.emplace_back(face);
 	}
+	return result;
 }
 
-auto computeContainment(const std::vector<TopoDS_Wire>& wires) -> std::unordered_map<int, std::vector<int>> {
-	std::unordered_map<int, std::vector<int>> result;
+auto computeContainment(const std::vector<TopoDS_Wire>& wires) -> std::unordered_map<unsigned int, std::vector<unsigned int>> {
+	std::unordered_map<unsigned int, std::vector<unsigned int>> result;
 	std::vector<bool> contained(wires.size(), false);
-	std::vector<std::vector<int>> contains(wires.size());
 	for (auto iOuter{0u}; iOuter < wires.size(); ++iOuter) {
 		TopoDS_Face outerFace{BRepBuilderAPI_MakeFace{wires[iOuter]}.Face()};
 		for (auto iInner{0u}; iInner < wires.size(); ++iInner) {
@@ -289,12 +283,74 @@ auto computeOffsetWire(const TopoDS_Wire& wire, const double offset) -> std::opt
 	BRepOffsetAPI_MakeOffset makeOffset{wire, GeomAbs_Arc};
 	makeOffset.Perform(offset);
 	if (makeOffset.IsDone()) {
-		const TopoDS_Shape& shape{makeOffset.Shape()};
+		const TopoDS_Shape shape{makeOffset.Shape()};
 		if (!shape.IsNull() && shape.ShapeType() == TopAbs_WIRE) {
-			result = TopoDS::Wire(shape);
+			if (offset > 0.0) result = TopoDS::Wire(TopoDS::Wire(shape).Reversed());
+			else result = TopoDS::Wire(shape);
 		}
 	}
 	else throw std::runtime_error{ "Invalid offset operation" };
+	return result;
+}
+
+auto splitAtFirstSelfIntersection(const TopoDS_Wire& wire) -> std::vector<TopoDS_Wire> {
+	std::vector<TopoDS_Wire> result;
+	std::vector<TopoDS_Edge> edges;
+	std::vector<gp_Pnt> points;
+
+	BRepTools_WireExplorer wireExplorer;
+	for (wireExplorer.Init(wire); wireExplorer.More(); wireExplorer.Next()) {
+		edges.emplace_back(wireExplorer.Current());
+		points.emplace_back(BRep_Tool::Pnt(wireExplorer.CurrentVertex()));
+	}
+
+	ShapeAnalysis_Wire analysis{wire, BRepBuilderAPI_MakeFace{wire}.Face(), 0.0};
+	std::optional<std::tuple<unsigned int, unsigned int, gp_Pnt>> intersection;
+	for (auto i{1u}; i + 1u <= edges.size() && !intersection; ++i) {
+		for (auto j{i + 1u}; j <= edges.size() && !intersection; ++j) {
+			if (analysis.CheckIntersectingEdges(i, j)) {
+				IntRes2d_SequenceOfIntersectionPoint points2d;
+				TColgp_SequenceOfPnt points3d;
+				TColStd_SequenceOfReal errors;
+				analysis.CheckIntersectingEdges(i, j, points2d, points3d, errors);
+				if (points3d.Size() > 0) intersection = std::make_tuple(i, j, points3d.Value(1));
+			}
+		}
+	}
+	if (intersection) {
+		auto [start, end, point]{*intersection};
+		BRepBuilderAPI_MakePolygon makePolygon0;
+		for (auto i{start + 1u}; i <= end; ++i) makePolygon0.Add(points[i - 1]);
+		makePolygon0.Add(point);
+		makePolygon0.Close();
+		result.emplace_back(makePolygon0.Wire());
+		BRepBuilderAPI_MakePolygon makePolygon1;
+		for (auto i{end + 1u}; i <= points.size() + start; ++i) makePolygon1.Add(points[(i - 1) % points.size()]);
+		makePolygon1.Add(point);
+		makePolygon1.Close();
+		result.emplace_back(makePolygon1.Wire());
+	}
+	else result.emplace_back(wire);
+	return result;
+}
+
+auto splitWireAtSelfIntersections(const TopoDS_Wire& wire, const TopoDS_Face& face) -> std::vector<TopoDS_Wire> {
+	std::vector<TopoDS_Wire> result;
+	std::vector<TopoDS_Wire> allWires;
+	std::deque<TopoDS_Wire> work;
+	work.emplace_back(wire);
+	while (!work.empty()) {
+		const auto currentWire{work.front()};
+		work.pop_front();
+		std::vector<TopoDS_Wire> subWires{splitAtFirstSelfIntersection(currentWire)};
+		if (subWires.size() == 1) allWires.emplace_back(subWires[0]);
+		else {
+			for (const auto& subWire : subWires) work.emplace_back(subWire);
+		}
+	}
+	for (const auto& w : allWires) {
+		if (surfaceNormal(face).Dot(surfaceNormal(BRepBuilderAPI_MakeFace{ w }.Face())) > 0.0) result.emplace_back(w);
+	}
 	return result;
 }
 
@@ -303,33 +359,45 @@ auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 4
 	const gp_Pln xsectionPlane{plane[0], plane[1], plane[2], plane[3]};
 	std::vector<TopoDS_Wire> wires{computeXSectionWires(compound, xsectionPlane)};
 	if (std::abs(offset) < 0.1 * deflection) {
-		for (const auto& wire : wires) discretizeWire(wire, points, deflection);
+		for (const auto& wire : wires) {
+			TopoDS_Wire polygonWire{convertToPolygon(wire, xsectionPlane, deflection)};
+			addPoints(polygonWire, points);
+		}
 	}
 	else {
 		std::vector<TopoDS_Wire> polygonWires;
 		for (const auto& wire : wires) polygonWires.emplace_back(convertToPolygon(wire, xsectionPlane, deflection));
-		std::unordered_map<int, std::vector<int>> containment{computeContainment(polygonWires)};
+		std::unordered_map<unsigned int, std::vector<unsigned int>> containment{computeContainment(polygonWires)};
 		std::vector<TopoDS_Face> offsetFaces;
 		for (const auto entry : containment) {
 			std::optional<TopoDS_Wire> outerWire{computeOffsetWire(polygonWires[entry.first], offset)};
 			if (outerWire) {
-				BRepBuilderAPI_MakeFace makeFace{*outerWire};
-				TopoDS_Face face{makeFace.Face()};
-				for (const auto inner : entry.second) {
-					std::optional<TopoDS_Wire> innerWire{computeOffsetWire(polygonWires[inner], -offset) };
-					if (innerWire) {
-						std::vector<TopoDS_Face> cut{cutTwoFaces(face, BRepBuilderAPI_MakeFace{*innerWire}.Face())};
-						if (cut.size() == 1) face = cut[0];
+				const TopoDS_Wire outerPolygonWire{convertToPolygon(*outerWire, xsectionPlane, deflection)};
+				std::vector<TopoDS_Wire> outerPolygonWires{splitWireAtSelfIntersections(outerPolygonWire, BRepBuilderAPI_MakeFace{polygonWires[entry.first]}.Face())};
+				for (const auto& oPW : outerPolygonWires) {
+					TopoDS_Face face{BRepBuilderAPI_MakeFace{oPW}.Face()};
+					std::vector<TopoDS_Face> cuttingFaces;
+					for (const auto inner : entry.second) {
+						std::optional<TopoDS_Wire> innerWire{computeOffsetWire(polygonWires[inner], -offset)};
+						if (innerWire) {
+							const TopoDS_Wire innerPolygonWire{convertToPolygon(*innerWire, xsectionPlane, deflection)};
+							std::vector<TopoDS_Wire> innerPolygonWires{splitWireAtSelfIntersections(innerPolygonWire, BRepBuilderAPI_MakeFace{polygonWires[inner]}.Face())};
+							for (const auto& iPW : innerPolygonWires) cuttingFaces.emplace_back(BRepBuilderAPI_MakeFace{iPW}.Face());
+						}
 					}
+					if (cuttingFaces.empty()) offsetFaces.emplace_back(face);
+					else for (const auto& f : cutFaces(face, cuttingFaces)) offsetFaces.emplace_back(f);
 				}
-				offsetFaces.emplace_back(face);
 			}
 		}
 		if (offsetFaces.size() == 1) {
-			for (const auto& wire : convertToWires(offsetFaces[0])) discretizeWire(wire, points, deflection);
+			for (const auto& wire : convertToWires(offsetFaces[0])) addPoints(wire, points);
 		}
 		else if (offsetFaces.size() > 1) {
-			uniteFaces(offsetFaces, points, deflection);
+			std::vector<TopoDS_Face> faces{uniteFaces(offsetFaces)};
+			for (const auto& face : faces) {
+				for (const auto& wire : convertToWires(face)) addPoints(wire, points);
+			}
 		}
 	}
 	return points;
