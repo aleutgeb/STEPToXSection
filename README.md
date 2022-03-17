@@ -61,22 +61,22 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 
 | Planar cross section |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 |
+| `STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0` |
 | ![Image Cross-Section-Spheres](examples/spheres/cross_section.png) |
 
 | Planar cross sections |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,-4.0,4.0,6 |
+| `STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,-4.0,4.0,6` |
 | ![Image Cross-Sections-Spheres](examples/spheres/cross_sections.png) |
 
 | Positive offset curves |
 | :---: |
-|STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -t 0.0,10.0,10 |
+| `STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -t 0.0,10.0,10` |
 | ![Image Positive-Offset-Curves-Spheres](examples/spheres/positive_offset_curves.png) |
 
 | Negative offset curves |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -t 0.0,-4.9,5 |
+| `STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -t 0.0,-4.9,5` |
 | ![Image Negative-Offset-Curves-Spheres](examples/spheres/negative_offset_curves.png) |
 
 ## Example Bone Pocket
@@ -85,34 +85,34 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 | :---: |
 | ![Image Solid-Bone-Pocket](examples/bone_pocket/solid.png) |
 
-| Planar cross-section |
+| Planar cross section |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0` |
 | ![Image Cross-Section-Bone-Pocket](examples/bone_pocket/cross_section.png) |
 
-| Planar cross-sections |
+| Planar cross sections |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,-4.0,4.0,5 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,-4.0,4.0,5` |
 | ![Image Cross-Sections-Bone-Pocket](examples/bone_pocket/cross_sections.png) |
 
 | Positive offset curves |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -t 0.0,4.0,5 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -t 0.0,4.0,5` |
 | ![Image Positive-Offset-Curves-Bone-Pocket](examples/bone_pocket/positive_offset_curves.png) |
 
 | Negative offset curves |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -t 0.0,-2.0,3 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -t 0.0,-2.0,3` |
 | ![Image Negative-Offset-Curves-Bone-Pocket](examples/bone_pocket/negative_offset_curves.png) |
 
 | Silhouette projected geometry |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -n 3.0 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -n 3.0` |
 | ![Image Silhouette-Projected-Geometry-Bone-Pocket](examples/bone_pocket/silhouette_projected_geometry.png) |
 
 | Silhouettes projected geometry |
 | :---: |
-| STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -n 1.0 |
+| `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -n 1.0` |
 | ![Image Silhouettes-Projected-Geometry-Bone-Pocket](examples/bone_pocket/silhouettes_projected_geometry.png) |
 
 # Remarks
