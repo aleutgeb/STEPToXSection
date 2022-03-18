@@ -22,7 +22,7 @@ Computing the planar cross section contour of selected solids of the file:
 
 `STEPToXSection -i <step file> -o <output file> -d <deflection> -p <plane> -s <solid1>,<solid2>,<...>`
 
-In order to change the default output format xyz the command line argument `-f ply`has to be specified.
+In order to change the default output format ply the command line argument `-f xyz`has to be specified.
 
 Following the help text from the command line:
 ```
@@ -33,7 +33,7 @@ Usage:
 
   -i, --in arg          Input file
   -o, --out arg         Output file
-  -f, --format arg      Output file format (xyz or ply) (default: xyz)
+  -f, --format arg      Output file format (xyz or ply) (default: ply)
   -c, --content         List content (solids)
   -s, --select arg      Select solids by name or index (comma seperated list,
                         index starts with 1)
