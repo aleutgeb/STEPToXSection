@@ -79,47 +79,61 @@ struct NamedSolid {
 	const std::string  name;
 };
 
-void writeXYZ(const std::string& outFile, const std::array<double, 3>& planeNormal, const std::vector<std::array<double, 3>>& points) {
+struct ResultEntry {
+	unsigned int plane;
+	unsigned int offset;
+	TopoDS_Wire  wire;
+};
+
+void writeXYZ(const std::string& outFile, const std::array<double, 3>& planeNormal, const std::vector<ResultEntry>& result) {
 	std::ofstream ofs{outFile};
-	for (const auto& p : points) {
-		ofs << p[0] << " " << p[1] << " " << p[2] << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+	for (const auto& entry : result) {
+		TopExp_Explorer explorer;
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+			const gp_XYZ p0{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
+			const gp_XYZ p1{BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+			ofs << p0.X() << " " << p0.Y() << " " << p0.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+			ofs << p1.X() << " " << p1.Y() << " " << p1.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+		}
 	}
 	ofs.close();
 }
 
-void writePLY(const std::string& outFile, const std::vector<std::array<double, 3>>& points) {
+void writePLY(const std::string& outFile, const std::vector<ResultEntry>& result) {
+	std::vector<std::array<double, 3>> vertices;
+	std::vector<std::vector<unsigned int>> faces;
+	for (const auto& entry : result) {
+		faces.push_back({});
+		TopExp_Explorer explorer;
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+			const gp_XYZ p{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
+			faces.back().emplace_back(static_cast<unsigned int>(vertices.size()));
+			vertices.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
+		}
+	}
+
 	std::ofstream ofs{outFile};
 	ofs << "ply" << "\n";
 	ofs << "format ascii 1.0" << "\n";
-	ofs << "element vertex " << points.size() << "\n";
-	ofs << "property float x" << "\n";
-	ofs << "property float y" << "\n";
-	ofs << "property float z" << "\n";
-	ofs << "element edge " << (points.size() / 2) << "\n";
-	ofs << "property int vertex1" << "\n";
-	ofs << "property int vertex2" << "\n";
+	ofs << "element vertex " << vertices.size() << "\n";
+	ofs << "property double x" << "\n";
+	ofs << "property double y" << "\n";
+	ofs << "property double z" << "\n";
+	ofs << "element face " << faces.size() << "\n";
+	ofs << "property list int int vertex_index" << "\n";
+	ofs << "property int plane_index" << "\n";
+	ofs << "property int offset_index" << "\n";
 	ofs << "end_header" << "\n";
-	for (std::size_t i{0}; i < points.size(); ++i) {
-		const auto& p{points[i]};
-		ofs << p[0] << " " << p[1] << " " << p[2] << "\n";
-	}
-	for (std::size_t i{0}; i < points.size(); i += 2) {
-		ofs << i << " " << i + 1 << "\n";
+	for (const auto& v : vertices) ofs << v[0] << " " << v[1] << " " << v[2] << "\n";
+	for (std::size_t i{0}; i < faces.size(); ++i) {
+		const auto& face{faces[i]};
+		ofs << face.size();
+		for (const auto& vIdx : face) ofs << " " << vIdx;
+		ofs << " " << result[i].plane << " " << result[i].offset << "\n";
 	}
 	ofs.close();
-}
-
-void writePLY(const std::string& outFile, const TopoDS_Wire& wire) {
-	std::vector<std::array<double, 3>> points;
-	TopExp_Explorer explorer;
-	for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-		const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
-		const gp_XYZ p0{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
-		const gp_XYZ p1{BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
-		points.emplace_back(std::array<double, 3>{p0.X(), p0.Y(), p0.Z()});
-		points.emplace_back(std::array<double, 3>{p1.X(), p1.Y(), p1.Z()});
-	}
-	writePLY(outFile, points);
 }
 
 void getNamedSolids(const TopLoc_Location& location, const std::string& prefix, unsigned int& id, const Handle(XCAFDoc_ShapeTool) shapeTool,
@@ -135,7 +149,7 @@ void getNamedSolids(const TopLoc_Location& location, const std::string& prefix, 
 	TopLoc_Location localLocation = location * shapeTool->GetLocation(label);
 	TDF_LabelSequence components;
 	if (shapeTool->GetComponents(referredLabel, components)) {
-		for (Standard_Integer compIndex = 1; compIndex <= components.Length(); ++compIndex) {
+		for (Standard_Integer compIndex{1}; compIndex <= components.Length(); ++compIndex) {
 			getNamedSolids(localLocation, fullName, id, shapeTool, components.Value(compIndex), namedSolids);
 		}
 	}
@@ -208,31 +222,18 @@ auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
 }
 
 auto computeXSectionWires(const TopoDS_Compound& compound, const gp_Pln& xsectionPlane) -> std::vector<TopoDS_Wire> {
-	BRepAlgoAPI_Section section(compound, xsectionPlane, Standard_False);
+	BRepAlgoAPI_Section section{compound, xsectionPlane, Standard_False};
 	section.ComputePCurveOn2(Standard_True);
 	section.Approximation(Standard_True);
 	section.Build();
 	return convertToWires(section.Shape());
 }
 
-void addPoints(const TopoDS_Wire& wire, std::vector<std::array<double, 3>>& points) {
-	BRepTools_WireExplorer wireExplorer;
-	std::vector<std::array<double, 3>> wirePoints;
-	for (wireExplorer.Init(wire); wireExplorer.More(); wireExplorer.Next()) {
-		const gp_Pnt p{BRep_Tool::Pnt(wireExplorer.CurrentVertex())};
-		wirePoints.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
-	}
-	for (auto i{0u}; i < wirePoints.size(); ++i) {
-		points.emplace_back(wirePoints[i]);
-		points.emplace_back(wirePoints[(i + 1) % wirePoints.size()]);
-	}
-}
-
 auto surfaceNormal(const TopoDS_Face& face) -> gp_Dir {
 	Standard_Real umin, umax, vmin, vmax;
 	BRepTools::UVBounds(face, umin, umax, vmin, vmax);
 	Handle(Geom_Surface) surface{BRep_Tool::Surface(face)};
-	GeomLProp_SLProps props(surface, umin, vmin, 1, 0.01);
+	GeomLProp_SLProps props{surface, umin, vmin, 1, 0.01};
 	return props.Normal();
 }
 
@@ -640,30 +641,29 @@ auto computeProjectedSilhouette(const TopoDS_Compound& compound, const gp_Pln& x
 }
 
 auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3>& planeNormal, const double planeDistance, const double deflection,
-		const double offset, const double projection) -> std::vector<std::array<double, 3>> {
-	std::vector<std::array<double, 3>> result;
-
-	const gp_Pln xsectionPlane{ planeNormal[0], planeNormal[1], planeNormal[2], planeDistance };
-	
+		const double offset, const double projection) -> std::vector<TopoDS_Wire> {
+	std::vector<TopoDS_Wire> result;
+	const gp_Pln xsectionPlane{planeNormal[0], planeNormal[1], planeNormal[2], planeDistance};
 	std::vector<TopoDS_Wire> wires;
 	if (projection > deflection * 0.1) wires = computeProjectedSilhouette(compound, xsectionPlane, projection, deflection);
 	else wires = computeXSectionWires(compound, xsectionPlane);
-
 	std::vector<TopoDS_Face> faces{computeXSectionFaces(wires, xsectionPlane, deflection, offset)};
 	for (const auto& face : faces) {
-		for (const auto& wire : convertToWires(face)) addPoints(wire, result);
+		for (const auto& wire : convertToWires(face)) result.emplace_back(wire);
 	}
 
 	return result;
 }
 
 auto computeXSections(const TopoDS_Compound& compound, const std::array<double, 3>& planeNormal, const std::vector<double>& planeDistances,
-		const double deflection, const std::vector<double>& offsets, const double projection) -> std::vector<std::array<double, 3>> {
-	std::vector<std::array<double, 3>> result;
-	for (const auto& planeDistance : planeDistances) {
-		for (const auto& offset : offsets) {
-			const auto& points{computeXSection(compound, planeNormal, planeDistance, deflection, offset, projection)};
-			std::copy(std::begin(points), std::end(points), std::back_inserter(result));
+		const double deflection, const std::vector<double>& offsets, const double projection) -> std::vector<ResultEntry> {
+	std::vector<ResultEntry> result;
+	for (auto iPlane{0u}; iPlane < planeDistances.size(); ++iPlane) {
+		const auto& planeDistance{planeDistances[iPlane]};
+		for (auto iOffset{0u}; iOffset < offsets.size(); ++iOffset) {
+			const auto& offset{offsets[iOffset]};
+			const auto wires{computeXSection(compound, planeNormal, planeDistance, deflection, offset, projection)};
+			for (const auto& wire : wires) result.emplace_back(ResultEntry{iPlane, iOffset, wire});
 		}
 	}
 	return result;
@@ -680,8 +680,8 @@ auto getSelectedSolids(const std::vector<NamedSolid>& namedSolids, const std::ve
 		for (const auto& sel : select) {
 			if (sel != "") {
 				if (sel[0] == '/') {
-					const auto iter = std::find_if(std::begin(namedSolids), std::end(namedSolids), [&](const auto& namesSolid) { return namesSolid.name == sel; });
-					if (iter == std::end(namedSolids)) throw std::logic_error{ std::string{"Could not find solid with name '"} + sel + "'" };
+					const auto iter{std::find_if(std::begin(namedSolids), std::end(namedSolids), [&](const auto& namesSolid) { return namesSolid.name == sel; })};
+					if (iter == std::end(namedSolids)) throw std::logic_error{std::string{"Could not find solid with name '"} + sel + "'"};
 					builder.Add(compound, iter->solid);
 				}
 				else {
@@ -704,9 +704,9 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 		const double deflection, const std::vector<double>& offsets, const std::array<double, 3>& planeNormal, const std::vector<double>& planeDistances,
 		const double projection, const std::string& format) {
 	TopoDS_Compound compound{getSelectedSolids(namedSolids, select)};
-	std::vector<std::array<double, 3>> points{computeXSections(compound, planeNormal, planeDistances, deflection, offsets, projection)};
-	if (format == "xyz") writeXYZ(outFile, planeNormal, points);
-	else if (format == "ply") writePLY(outFile, points);
+	const std::vector<ResultEntry> result{computeXSections(compound, planeNormal, planeDistances, deflection, offsets, projection)};
+	if (format == "xyz") writeXYZ(outFile, planeNormal, result);
+	else if (format == "ply") writePLY(outFile, result);
 }
 
 auto generateRange(const double start, const double end, const double count) -> std::vector<double> {
@@ -727,7 +727,7 @@ int main(int argc, char* argv[]) {
 	options.add_options()
 			("i,in", "Input file", cxxopts::value<std::string>())
 			("o,out", "Output file", cxxopts::value<std::string>())
-			("f,format", "Output file format (xyz or ply)", cxxopts::value<std::string>()->default_value("xyz"))
+			("f,format", "Output file format (xyz or ply)", cxxopts::value<std::string>()->default_value("ply"))
 			("c,content", "List content (solids)")
 			("s,select", "Select solids by name or index (comma seperated list, index starts with 1)", cxxopts::value<std::vector<std::string>>())
 			("d,deflection", "Chordal tolerance used during discretization", cxxopts::value<double>())
@@ -749,7 +749,7 @@ int main(int argc, char* argv[]) {
 		else if (result.count("in") && result.count("out")) {
 			const auto inFile{result["in"].as<std::string>()}, outFile{result["out"].as<std::string>()};
 			const auto format{result["format"].as<std::string>()};
-			if (format != "xyz" && format != "ply") throw std::logic_error{ std::string{"Format '"} + format + "' not supported" };
+			if (format != "xyz" && format != "ply") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
 			std::vector<std::string> select;
 			if (result.count("select")) select = result["select"].as<std::vector<std::string>>();
 			if (!result.count("deflection")) throw std::logic_error{std::string{"Missing option 'deflection'"}};

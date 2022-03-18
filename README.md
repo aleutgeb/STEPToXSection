@@ -1,15 +1,14 @@
 # STEPToXSection
-The program STEPToXSection extracts the contour of a planar cross section of solids contained in STEP files. Additionally it supports offsetting of the cross section contour.
 
-# Description
+## Description
 The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. It supports the orthogonal projection of geometries with a specified maximum plane distance, in which the silhouette of the projected geometries represents the base contour. Additionally the program supports the computation of contour offset curves. The contour is a list of line segments. The supported output file formats are ply and xyz. In the case of xyz, two consecutive vertices belong to the same edge. A popular viewer for the different file types is MeshLab (https://www.meshlab.net). STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
 
-# Requirements
+## Requirements
  * CMake installation (https://cmake.org)
  * Visual Studio C++ installation (https://visualstudio.microsoft.com)
  * OpenCASCADE installation (https://old.opencascade.com/content/latest-release, download needs registration)
 
-# Usage
+## Usage
 Listing the contents (solids) of a STEP file:
 `STEPToXSection -c -i <step file>`
 
@@ -49,11 +48,11 @@ Usage:
   -h, --help            Print usage
 ```
 
-# Examples
+## Examples
 
 Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 
-## Examples Spheres
+### Examples Spheres
 
 | Solids |
 | :---: |
@@ -79,7 +78,7 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 | `STEPToXSection.exe -i ..\..\..\examples\spheres\spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -t 0.0,-4.9,5` |
 | ![Image Negative-Offset-Curves-Spheres](examples/spheres/negative_offset_curves.png) |
 
-## Example Bone Pocket
+### Example Bone Pocket
 
 | Solid |
 | :---: |
@@ -115,5 +114,5 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 | `STEPToXSection.exe -i ..\..\..\examples\bone_pocket\Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -n 1.0` |
 | ![Image Silhouettes-Projected-Geometry-Bone-Pocket](examples/bone_pocket/silhouettes_projected_geometry.png) |
 
-# Remarks
+## Remarks
 This code has been tested with an OpenCASCADE 7.5.0 prebuilt binary (`opencascade-7.5.0-vc14-64.exe`) on Windows, as well as OpenCASCADE system packages on openSUSE Linux. With changes in the configuration section in the `CMakeLists.txt` file the build should also work with other OpenCASCADE versions.
