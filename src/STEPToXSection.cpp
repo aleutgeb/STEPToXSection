@@ -782,11 +782,11 @@ int main(int argc, char* argv[]) {
 		return EXIT_SUCCESS;
 	}
 	catch (const std::exception& ex) {
-		std::cout << ex.what() << std::endl;;
+		std::cerr << ex.what() << std::endl;
 		return EXIT_FAILURE;
 	}
 	catch (...) {
-		std::cout << "Unexpected exception" << std::endl;
+		std::cerr << "Unexpected exception" << std::endl;
 		return EXIT_FAILURE;
 	}
 }
