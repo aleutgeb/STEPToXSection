@@ -919,7 +919,7 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 	TopoDS_Compound compound{getSelectedSolids(namedSolids, select)};
 	const std::vector<ResultEntry> result{computeXSections(compound, planeNormal, planeDistances, deflection, offsets, projection)};
 	if (format == "xyz") writeXYZ(outFile, planeNormal, result);
-	else if (format == "ply") writePLYEdges(outFile, result);
+	else if (format == "ply") writePLY(outFile, result);
 }
 
 auto generateRange(const double start, const double end, const double count) -> std::vector<double> {
