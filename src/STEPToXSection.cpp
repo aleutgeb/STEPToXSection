@@ -39,6 +39,7 @@
 #include <TDF_ChildIterator.hxx>
 #include <TDataStd_Name.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -55,16 +56,18 @@
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepFeat.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <GeomLProp_SLProps.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <ShapeFix_Wire.hxx>
 #include <gp_Pln.hxx>
+#include <gp_Trsf.hxx>
 #include <HLRBRep_Algo.hxx>
 #include <HLRBRep_HLRToShape.hxx>
 #include <GCPnts_UniformDeflection.hxx>
 #include <vector>
 #include <unordered_map>
-#include <set>
+#include <unordered_set>
 #include <deque>
 #include <numeric>
 #include <array>
@@ -85,6 +88,31 @@ struct ResultEntry {
 	TopoDS_Wire  wire;
 };
 
+struct pair_hash {
+	template <class T1, class T2>
+	std::size_t operator() (const std::pair<T1, T2>& pair) const {
+		return std::hash<T1>()(pair.first) ^ std::hash<T2>()(pair.second);
+	}
+};
+
+struct Connectivity {
+	std::vector<gp_XYZ>                                         vertices;
+	std::unordered_map<unsigned int, std::vector<unsigned int>> vertexToVertices;
+};
+
+struct CoordinatesLessOperator {
+	CoordinatesLessOperator(const double e) : eps{e} {}
+
+	bool operator()(const gp_XYZ& lhs, const gp_XYZ& rhs) const {
+		for (auto i{0u}; i < 3u; ++i) {
+			if (std::abs(lhs.GetData()[i] - rhs.GetData()[i]) > eps) return lhs.GetData()[i] < rhs.GetData()[i];
+		}
+		return false;
+	}
+
+	const double eps;
+};
+
 void writeXYZ(const std::string& outFile, const std::array<double, 3>& planeNormal, const std::vector<ResultEntry>& result) {
 	std::ofstream ofs{outFile};
 	for (const auto& entry : result) {
@@ -98,6 +126,35 @@ void writeXYZ(const std::string& outFile, const std::array<double, 3>& planeNorm
 		}
 	}
 	ofs.close();
+}
+
+void writePLY(const std::string& outFile, const std::vector<TopoDS_Edge>& edges) {
+	std::ofstream ofs{outFile};
+	ofs << "ply" << "\n";
+	ofs << "format ascii 1.0" << "\n";
+	ofs << "element vertex " << edges.size() * 2 << "\n";
+	ofs << "property double x" << "\n";
+	ofs << "property double y" << "\n";
+	ofs << "property double z" << "\n";
+	ofs << "element edge " << edges.size() << "\n";
+	ofs << "property int vertex1" << "\n";
+	ofs << "property int vertex2" << "\n";
+	ofs << "end_header" << "\n";
+	for (const TopoDS_Edge& edge : edges) {
+		const std::array<gp_XYZ, 2> points{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord(), BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+		for (const auto& p : points) ofs << p.X() << " " << p.Y() << " " << p.Z() << "\n";
+	}
+	for (std::size_t i{0}; i < edges.size(); ++i) ofs << i * 2 << " " << i * 2 + 1 << "\n";
+	ofs.close();
+}
+
+void writePLYEdges(const std::string& outFile, const std::vector<ResultEntry>& result) {
+	std::vector<TopoDS_Edge> edges;
+	for (const auto& entry : result) {
+		TopExp_Explorer explorer;
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) edges.emplace_back(TopoDS::Edge(explorer.Current()));
+	}
+	writePLY(outFile, edges);
 }
 
 void writePLY(const std::string& outFile, const std::vector<ResultEntry>& result) {
@@ -127,7 +184,7 @@ void writePLY(const std::string& outFile, const std::vector<ResultEntry>& result
 	ofs << "property int offset_index" << "\n";
 	ofs << "end_header" << "\n";
 	for (const auto& v : vertices) ofs << v[0] << " " << v[1] << " " << v[2] << "\n";
-	for (std::size_t i{0}; i < faces.size(); ++i) {
+	for (std::size_t i{0u}; i < faces.size(); ++i) {
 		const auto& face{faces[i]};
 		ofs << face.size();
 		for (const auto& vIdx : face) ofs << " " << vIdx;
@@ -146,7 +203,7 @@ void getNamedSolids(const TopLoc_Location& location, const std::string& prefix, 
 	if (name == "") name = std::to_string(id++);
 	std::string fullName{prefix + "/" + name};
 
-	TopLoc_Location localLocation = location * shapeTool->GetLocation(label);
+	TopLoc_Location localLocation{location * shapeTool->GetLocation(label)};
 	TDF_LabelSequence components;
 	if (shapeTool->GetComponents(referredLabel, components)) {
 		for (Standard_Integer compIndex{1}; compIndex <= components.Length(); ++compIndex) {
@@ -171,10 +228,10 @@ void read(const std::string& inFile, std::vector<NamedSolid>& namedSolids) {
 	reader.SetNameMode(true);
 	IFSelect_ReturnStatus stat{reader.ReadFile(inFile.c_str())};
 	if (stat != IFSelect_RetDone || !reader.Transfer(document)) throw std::logic_error{std::string{"Could not read '"} + inFile + "'"};
-	Handle(XCAFDoc_ShapeTool) shapeTool {XCAFDoc_DocumentTool::ShapeTool(document->Main())};
+	Handle(XCAFDoc_ShapeTool) shapeTool{XCAFDoc_DocumentTool::ShapeTool(document->Main())};
 	TDF_LabelSequence topLevelShapes;
 	shapeTool->GetFreeShapes(topLevelShapes);
-	unsigned int id{1};
+	unsigned int id{1u};
 	for (Standard_Integer iLabel{1}; iLabel <= topLevelShapes.Length(); ++iLabel) {
 		getNamedSolids(TopLoc_Location{}, "", id, shapeTool, topLevelShapes.Value(iLabel), namedSolids);
 	}
@@ -216,7 +273,7 @@ auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
 	Handle(TopTools_HSequenceOfShape) wires{new TopTools_HSequenceOfShape{}};
 	TopExp_Explorer explorer;
 	for (explorer.Init(shape, TopAbs_EDGE); explorer.More(); explorer.Next()) edges->Append(TopoDS::Edge(explorer.Current()));
-	ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 0.0, Standard_True, wires);
+	ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 0.001, Standard_False, wires);
 	for (int iWire{1}; iWire <= wires->Size(); ++iWire) result.emplace_back(TopoDS::Wire(wires->Value(iWire)));
 	return result;
 }
@@ -406,7 +463,7 @@ auto computeOffsetWires(const TopoDS_Wire& wire, const double offset) -> std::ve
 		}
 		else throw std::runtime_error{"Wire offset computation failed"};
 	}
-	else throw std::runtime_error{ "Wire offset computation failed" };
+	else throw std::runtime_error{"Wire offset computation failed"};
 	return result;
 }
 
@@ -428,7 +485,29 @@ auto computeSplittedOffsetPolygonWires(const TopoDS_Wire& wire, const double off
 	return result;
 }
 
-auto projectShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, const double distance) -> TopoDS_Shape {
+auto discretizeEdge(const TopoDS_Edge& edge, const gp_Trsf& transformation, const gp_Pln& xsectionPlane, double deflection) -> std::vector<TopoDS_Edge> {
+	std::vector<TopoDS_Edge> result;
+	BRepAdaptor_Curve curve{edge};
+	GCPnts_UniformDeflection discretizer{curve, deflection, Standard_True};
+	if (discretizer.IsDone() && discretizer.NbPoints() > 0) {
+		int nbPoints{discretizer.NbPoints()};
+		for (int i{2}; i <= nbPoints; i++) {
+			std::array<gp_Pnt, 2> points{discretizer.Value(i - 1), discretizer.Value(i)};
+			for (auto& p : points) {
+				p.Transform(transformation);
+				gp_XYZ coord{p.Coord()};
+				const gp_XYZ vec{p.XYZ() - xsectionPlane.Location().XYZ()};
+				const double distance{vec * xsectionPlane.Axis().Direction().XYZ()};
+				coord -= xsectionPlane.Axis().Direction().XYZ().Multiplied(distance);
+				p.SetCoord(coord.X(), coord.Y(), coord.Z());
+			}
+			result.emplace_back(BRepBuilderAPI_MakeEdge(points[0], points[1]).Edge());
+		}
+	}
+	return result;
+}
+
+auto projectShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, const double distance, const double deflection) -> std::vector<TopoDS_Edge> {
 	gp_Pln plane0{xsectionPlane.Location().XYZ() - xsectionPlane.Axis().Direction().XYZ() * distance, -xsectionPlane.Axis().Direction()};
 	gp_Pln plane1{xsectionPlane.Location().XYZ() + xsectionPlane.Axis().Direction().XYZ() * distance, xsectionPlane.Axis().Direction()};
 	const TopoDS_Face face0{BRepBuilderAPI_MakeFace{plane0}};
@@ -441,6 +520,7 @@ auto projectShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, const 
 	tools.Append(halfSpace0);
 	tools.Append(halfSpace1);
 	BRepAlgoAPI_Cut cut;
+	cut.SetFuzzyValue(deflection);
 	cut.SetArguments(arguments);
 	cut.SetTools(tools);
 	cut.Build();
@@ -449,12 +529,22 @@ auto projectShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, const 
 	Handle(HLRBRep_Algo) hlr{new HLRBRep_Algo};
 	hlr->Add(cutShape);
 	HLRAlgo_Projector projector{axis};
+	const gp_Trsf inverse{projector.InvertedTransformation()};
 	hlr->Projector(projector);
 	hlr->Update();
 	hlr->Hide();
 	HLRBRep_HLRToShape hlrToShape(hlr);
-	TopoDS_Shape outline{hlrToShape.VCompound()};
-	return outline;
+	std::vector<TopoDS_Edge> result;
+	for (const auto type : { /*HLRBRep_Undefined, HLRBRep_IsoLine,*/ HLRBRep_OutLine, HLRBRep_Rg1Line, /*HLRBRep_RgNLine , */HLRBRep_Sharp}) {
+		TopoDS_Shape hlrShape{hlrToShape.CompoundOfEdges(type, true, false)};
+		for (TopoDS_Iterator iter{hlrShape}; iter.More(); iter.Next()) {
+			if (iter.Value().ShapeType() == TopAbs_EDGE) {
+				const std::vector<TopoDS_Edge> edges{discretizeEdge(TopoDS::Edge(iter.Value()), inverse, xsectionPlane, deflection)};
+				std::copy(std::begin(edges), std::end(edges), std::back_inserter(result));
+			}
+		}
+	}
+	return result;
 }
 
 auto computeXSectionFaces(const std::vector<TopoDS_Wire>& wires, const gp_Pln& xsectionPlane, const double deflection, const double offset) -> std::vector<TopoDS_Face> {
@@ -479,165 +569,289 @@ auto computeXSectionFaces(const std::vector<TopoDS_Wire>& wires, const gp_Pln& x
 	return uniteFaces(offsetFaces);
 }
 
-auto discretizeEdge(const TopoDS_Edge& edge, double deflection) -> std::vector<TopoDS_Edge> {
-	std::vector<TopoDS_Edge> result;
-	BRepAdaptor_Curve curve{edge};
-	GCPnts_UniformDeflection discretizer{curve, deflection, Standard_True};
-	if (discretizer.IsDone() && discretizer.NbPoints() > 0) {
-		int nbPoints{discretizer.NbPoints()};
-		for (int i{2}; i <= nbPoints; i++) {
-			gp_Pnt p0{discretizer.Value(i - 1)};
-			gp_Pnt p1{discretizer.Value(i)};
-			result.emplace_back(BRepBuilderAPI_MakeEdge(p0, p1).Edge());
-		}
-	}
-	return result;
+void disconnectEdge(Connectivity& connectivity, const unsigned int from, const unsigned int to) {
+	auto& forwards{connectivity.vertexToVertices[from]};
+	forwards.erase(std::find(std::begin(forwards), std::end(forwards), to));
+	auto& backwards{connectivity.vertexToVertices[to]};
+	backwards.erase(std::find(std::begin(backwards), std::end(backwards), from));
 }
 
-auto discretizeEdges(const TopoDS_Shape& shape, const double deflection) -> std::vector<TopoDS_Edge> {
-	std::vector<TopoDS_Edge> result;
-	for (TopoDS_Iterator iter{shape}; iter.More(); iter.Next()) {
-		if (iter.Value().ShapeType() == TopAbs_EDGE) {
-			const std::vector<TopoDS_Edge> discretizedEdge{discretizeEdge(TopoDS::Edge(iter.Value()), deflection)};
-			std::copy(std::begin(discretizedEdge), std::end(discretizedEdge), std::back_inserter(result));
+void connectToVertices(Connectivity& connectivity, const double eps) {
+	std::vector<std::pair<unsigned int, unsigned int>> joinEdges;
+	for (const auto& fromTo : connectivity.vertexToVertices) {
+		if (fromTo.second.size() < 2) {
+			const auto& fromPoint{connectivity.vertices[fromTo.first]};
+			auto minDist{std::numeric_limits<double>::max()};
+			unsigned int minIdx;
+			for (auto pointIdx{0u}; pointIdx < connectivity.vertices.size(); ++pointIdx) {
+				if (pointIdx != fromTo.first) {
+					const auto dist{(connectivity.vertices[pointIdx] - fromPoint).Modulus()};
+					if (dist < minDist) {
+						minDist = dist;
+						minIdx = pointIdx;
+					}
+				}
+			}
+			if (minDist < eps) joinEdges.emplace_back(fromTo.first, minIdx);
 		}
 	}
-	return result;
+	for (const auto& fromTo : joinEdges) {
+		connectivity.vertexToVertices[fromTo.first].emplace_back(fromTo.second);
+		connectivity.vertexToVertices[fromTo.second].emplace_back(fromTo.first);
+	}
 }
 
-struct Connectivity {
-	std::vector<gp_XYZ> vertices;
-	std::vector<std::pair<unsigned int, unsigned int>> edges;
-	std::map<unsigned int, std::vector<unsigned int>> vertexToVertices;
-};
-
-struct CoordinatesLessOperator {
-	CoordinatesLessOperator(const double e) : eps{e} {}
-
-	bool operator()(const gp_XYZ& lhs, const gp_XYZ& rhs) const {
-		for (auto i{0}; i < 3; ++i) {
-			if (std::abs(lhs.GetData()[i] - rhs.GetData()[i]) > eps) return lhs.GetData()[i] < rhs.GetData()[i];
+void connectToEdges(Connectivity& connectivity, const double eps) {
+	std::unordered_map<std::pair<unsigned int, unsigned int>, std::vector<unsigned int>, pair_hash> splitEdges;
+	for (const auto& fromTo : connectivity.vertexToVertices) {
+		if (fromTo.second.size() < 2) {
+			const auto& fromPoint{connectivity.vertices[fromTo.first]};
+			auto minDist{std::numeric_limits<double>::max()};
+			unsigned int minFromIdx;
+			unsigned int minToIdx;
+			for (const auto& vertexEdges : connectivity.vertexToVertices) {
+				const auto& edgeFrom{vertexEdges.first};
+				const auto& edgeTos{vertexEdges.second};
+				if (fromTo.first != edgeFrom) {
+					for (const auto& edgeTo : edgeTos) {
+						if (fromTo.first != edgeTo) {
+							BRepBuilderAPI_MakeEdge makeEdge{connectivity.vertices[edgeFrom], connectivity.vertices[edgeTo]};
+							if (makeEdge.IsDone()) {
+								BRepExtrema_DistShapeShape distCalc;
+								distCalc.LoadS1(makeEdge.Edge());
+								distCalc.LoadS2(BRepBuilderAPI_MakeVertex{fromPoint}.Shape());
+								distCalc.Perform();
+								const auto dist{distCalc.Value()};
+								if (dist < minDist) {
+									minDist = dist;
+									minFromIdx = edgeFrom;
+									minToIdx = edgeTo;
+								}
+							}
+						}
+					}
+				}
+			}
+			if (minDist < eps) {
+				auto edge{std::make_pair(minFromIdx, minToIdx)};
+				if (edge.first > edge.second) std::swap(edge.first, edge.second);
+				splitEdges[edge].emplace_back(fromTo.first);
+			}
 		}
-		return false;
 	}
 
-	const double eps;
-};
+	for (const auto& edgeToPoints : splitEdges) {
+		const auto& from{edgeToPoints.first.first};
+		const auto& to{edgeToPoints.first.second};
+		const auto& point{edgeToPoints.second};
+		std::vector<unsigned int> sorted{edgeToPoints.second};
+		std::sort(std::begin(sorted), std::end(sorted), [&connectivity, &from](const auto idx0, const auto idx1) {
+			const auto& p{connectivity.vertices[from]};
+			const auto& p0{connectivity.vertices[idx0]};
+			const auto& p1{connectivity.vertices[idx1]};
+			return (p0 - p).Modulus() < (p1 - p).Modulus();
+		});
+		disconnectEdge(connectivity, from, to);
+		sorted.insert(std::begin(sorted), from);
+		sorted.emplace_back(to);
+		for (auto i{0u}; i + 1u < sorted.size(); ++i) {
+			connectivity.vertexToVertices[sorted[i]].emplace_back(sorted[i + 1u]);
+			connectivity.vertexToVertices[sorted[i + 1u]].emplace_back(sorted[i]);
+		}
+	}
+}
 
-auto computeConnectivity(const std::vector<TopoDS_Edge>& edges, const double eps) -> Connectivity {
+void connectOpenEdges(Connectivity& connectivity, const double eps) {
+	connectToVertices(connectivity, eps * 5.0);
+	connectToEdges(connectivity, eps);
+}
+
+void writeConnectivity(const Connectivity& connectivity, const std::string& outFile) {
+	std::vector<TopoDS_Edge> edges;
+	for (const auto& fromTos : connectivity.vertexToVertices) {
+		const auto& p0{connectivity.vertices[fromTos.first]};
+		for (const auto& to : fromTos.second) {
+			const auto& p1{connectivity.vertices[to]};
+			BRepBuilderAPI_MakeEdge makeEdge{p0, p1};
+			if (makeEdge.IsDone()) edges.emplace_back(makeEdge.Edge());
+		}
+	}
+	writePLY(outFile, edges);
+}
+
+auto computeConnectivity(const std::vector<TopoDS_Edge>& origEdges, const double eps) -> Connectivity {
 	Connectivity result;
+	std::vector<std::pair<unsigned int, unsigned int>> edges;
+
 	CoordinatesLessOperator comp{eps};
-	std::map <gp_XYZ, unsigned int, decltype(comp)> vertexMap{comp};
-	for (auto iEdge{0u}; iEdge < edges.size(); ++iEdge) {
-		const auto& edge{edges[iEdge]};
-		const gp_XYZ p0{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
-		const gp_XYZ p1{BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
-		auto it0{vertexMap.find(p0)};
-		unsigned int i0;
-		if (it0 == std::end(vertexMap)) {
-			i0 = static_cast<unsigned int>(result.vertices.size());
-			vertexMap[p0] = i0;
-			result.vertices.emplace_back(p0);
+	std::map <gp_XYZ, unsigned int, CoordinatesLessOperator> vertexMap{comp};
+	for (auto iEdge{0u}; iEdge < origEdges.size(); ++iEdge) {
+		const auto& edge{origEdges[iEdge]};
+		const std::array<gp_XYZ, 2> points{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord(), BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+		std::array<unsigned int, 2> indices;
+		for (auto iSide{0u}; iSide < 2u; ++iSide) {
+			auto it{vertexMap.find(points[iSide])};
+			if (it == std::end(vertexMap)) {
+				indices[iSide] = static_cast<unsigned int>(result.vertices.size());
+				vertexMap[points[iSide]] = indices[iSide];
+				result.vertices.emplace_back(points[iSide]);
+			}
+			else indices[iSide] = it->second;
 		}
-		else i0 = it0->second;
-		auto it1{vertexMap.find(p1)};
-		unsigned int i1;
-		if (it1 == std::end(vertexMap)) {
-			i1 = static_cast<unsigned int>(result.vertices.size());
-			vertexMap[p1] = i1;
-			result.vertices.emplace_back(p1);
-		}
-		else i1 = it1->second;
-		result.edges.emplace_back(i0, i1);
+		edges.emplace_back(indices[0], indices[1]);
 	}
-	for (const auto& pair : result.edges) {
-		result.vertexToVertices[pair.first].emplace_back(pair.second);
-		result.vertexToVertices[pair.second].emplace_back(pair.first);
+
+	for (const auto& fromTo : edges) {
+		result.vertexToVertices[fromTo.first].emplace_back(fromTo.second);
+		result.vertexToVertices[fromTo.second].emplace_back(fromTo.first);
 	}
+	connectOpenEdges(result, eps);
 	return result;
 }
 
-void computeAllLoops(const std::map<unsigned int, std::vector<unsigned int>>& vertexToVertices,
-		const unsigned int current, std::set<unsigned int> visited, std::vector<unsigned int> loop,
-		std::vector<std::vector<unsigned int>>& allLoops, std::set<unsigned int>& allVisited) {
-	loop.emplace_back(current);
+void computeCluster(const std::unordered_map<unsigned int, std::vector<unsigned int>>& vertexToVertices,
+		const unsigned int current, std::unordered_set<unsigned int>& visited, std::vector<unsigned int>& cluster) {
+	cluster.emplace_back(current);
 	visited.insert(current);
-	allVisited.insert(current);
 	auto it{vertexToVertices.find(current)};
 	if (it != std::end(vertexToVertices)) {
 		for (const auto& next : it->second) {
 			if (visited.find(next) == std::end(visited)) {
-				computeAllLoops(vertexToVertices, next, visited, loop, allLoops, allVisited);
-			}
-			else if (loop.size() > 2 && next == loop.front()) {
-				allLoops.emplace_back(loop);
+				computeCluster(vertexToVertices, next, visited, cluster);
 			}
 		}
 	}
 }
 
-auto computeUniqueLoops(const std::vector<std::vector<unsigned int>>& allLoops) -> std::vector<std::vector<unsigned int>> {
-	std::vector<std::vector<unsigned int>> result;
-	for (auto i{0u}; i < allLoops.size(); ++i) {
-		bool equal{false};
-		for (auto j{i + 1}; j < allLoops.size() && !equal; ++j) {
-			if (allLoops[i].size() == allLoops[j].size()) {
-				std::vector<unsigned int> lhs{allLoops[i]};
-				std::vector<unsigned int> rhs{allLoops[j]};
-				std::sort(std::begin(lhs), std::end(lhs));
-				std::sort(std::begin(rhs), std::end(rhs));
-				if (lhs == rhs) equal = true;
+auto findSeed(const Connectivity& connectivity, const std::vector<unsigned int>& cluster, const double deflection) -> std::optional<unsigned int> {
+	std::array<double, 3> min{std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+	std::array<double, 3> max{std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()};
+
+	for (const auto& idx : cluster) {
+		const gp_XYZ& p{connectivity.vertices[idx]};
+		for (auto dim{0u}; dim < 3u; ++dim) {
+			min[dim] = std::min(min[dim], p.GetData()[dim]);
+			max[dim] = std::max(max[dim], p.GetData()[dim]);
+		}
+	}
+
+	std::array<unsigned int, 3> dims{0u, 1u, 2u};
+	std::sort(std::begin(dims), std::end(dims), [&min, &max](const auto lhs, const auto rhs) { return max[lhs] - min[lhs] > max[rhs] - min[rhs]; });
+	std::vector<unsigned int> candidates{cluster};
+	for (auto dim{0u}; dim < 3u && candidates.size() > 1; ++dim) {
+		const auto curDim{dims[dim]};
+		std::vector<unsigned int> newCandidates;
+		std::sort(std::begin(candidates), std::end(candidates), [&connectivity, &curDim](const auto idx0, const auto idx1) {
+			const gp_XYZ& p0{connectivity.vertices[idx0]};
+			const gp_XYZ& p1{connectivity.vertices[idx1]};
+			return p0.GetData()[curDim] < p1.GetData()[curDim];
+		});
+		const gp_XYZ& ref{connectivity.vertices[candidates.front()]};
+		for (const auto& idx : candidates) {
+			const gp_XYZ& p{connectivity.vertices[idx]};
+			if (std::abs(p.GetData()[curDim] - ref.GetData()[curDim]) > deflection) break;
+			else newCandidates.emplace_back(idx);
+		}
+		candidates = newCandidates;
+	}
+	if (!candidates.empty()) return candidates.front();
+	else return std::nullopt;
+}
+
+auto findCandidate(const Connectivity& connectivity, const gp_XYZ& normal, const unsigned int prev, const unsigned int current) -> std::optional<unsigned int> {
+	const auto c_minAngle{std::acos(-1.0) * 1.0e-6};
+	const std::vector<unsigned int>& nexts{connectivity.vertexToVertices.find(current)->second};
+	const auto& prevPoint{connectivity.vertices[prev]};
+	const auto& currentPoint{connectivity.vertices[current]};
+	const auto edgePrev{(prevPoint - currentPoint).Normalized()};
+	double maxAngle{0.0};
+	std::optional<unsigned int> result;
+	for (const auto& next : nexts) {
+		if (next != prev) {
+			const auto& nextPoint{connectivity.vertices[next]};
+			const auto edgeNext{(nextPoint - currentPoint).Normalized()};
+			auto angle{std::acos(std::clamp(edgePrev * edgeNext, -1.0, 1.0))};
+			if (angle > c_minAngle && angle + c_minAngle < std::acos(-1.0) && (edgeNext ^ edgePrev).Normalized() * normal < 0.0) angle = 2.0 * std::acos(-1.0) - angle;
+			if (angle > maxAngle) {
+				maxAngle = angle;
+				result = next;
 			}
 		}
-		if (!equal) result.emplace_back(allLoops[i]);
 	}
 	return result;
 }
 
-auto computeAllWires(const Connectivity& connectivity) -> std::vector<std::vector<TopoDS_Wire>> {
-	std::vector<std::vector<TopoDS_Wire>> result;
-	std::set<unsigned int> allVisited;
-	std::vector<unsigned int> vertexIndices(connectivity.vertices.size());
-	std::iota(std::begin(vertexIndices), std::end(vertexIndices), 0);
-	auto it{std::find_if(std::begin(vertexIndices), std::end(vertexIndices),[&allVisited](const unsigned int index) { return allVisited.find(index) == std::end(allVisited);})};
-	while (it != std::end(vertexIndices)) {
-		std::set<unsigned int> visited;
-		std::vector<unsigned int> loop;
-		std::vector<std::vector<unsigned int>> allLoops;
-		computeAllLoops(connectivity.vertexToVertices, *it, visited, loop, allLoops, allVisited);
-		allLoops = computeUniqueLoops(allLoops);
-		result.push_back({});
-		for (const auto& loop : allLoops) {
-			BRepBuilderAPI_MakePolygon makePolygon;
-			for (const auto& vIdx : loop) {
-				const gp_XYZ p{connectivity.vertices[vIdx]};
-				makePolygon.Add(p);
+auto computeWire(const Connectivity& connectivity, const std::vector<unsigned int>& cluster, const double deflection) -> std::optional<TopoDS_Wire> {
+	std::optional<unsigned int> currentOpt{findSeed(connectivity, cluster, deflection)};
+	if (!currentOpt) return std::nullopt;
+	unsigned int current{*currentOpt};
+	auto currentPoint{connectivity.vertices[current]};
+	auto tos{connectivity.vertexToVertices.find(current)->second};
+	auto minDP{std::numeric_limits<double>::max()};
+	unsigned int prev;
+	unsigned int next;
+	for (auto i{0u}; i < tos.size(); ++i) {
+		const auto& toPoint0{connectivity.vertices[tos[i]]};
+		const auto edge0{(toPoint0 - currentPoint).Normalized()};
+		for (auto j{i + 1u}; j < tos.size(); ++j) {
+			const auto& toPoint1{connectivity.vertices[tos[j]]};
+			const auto edge1{(toPoint1 - currentPoint).Normalized()};
+			const auto dp{edge0 * edge1};
+			if (dp < minDP) {
+				minDP = dp;
+				next = tos[i];
+				prev = tos[j];
 			}
-			makePolygon.Close();
-			result.back().emplace_back(makePolygon.Wire());
 		}
-		it = std::find_if(std::begin(vertexIndices), std::end(vertexIndices), [&allVisited](const unsigned int index) { return allVisited.find(index) == std::end(allVisited);});
+	}
+	if (!(minDP < 1.0)) return std::nullopt;
+	std::vector<unsigned int> loop;
+	std::unordered_set<unsigned int> visited;
+	loop.emplace_back(prev);
+	loop.emplace_back(current);
+	loop.emplace_back(next);
+	visited.insert(prev);
+	visited.insert(current);
+	visited.insert(next);
+	const auto& prevPoint{connectivity.vertices[prev]};
+	const auto& nextPoint{connectivity.vertices[next]};
+	const auto edgeNext{(nextPoint - currentPoint).Normalized()};
+	const auto edgePrev{(prevPoint - currentPoint).Normalized()};
+	const auto normal{(edgeNext ^ edgePrev).Normalized()};
+	while (true) {
+		auto candidate{findCandidate(connectivity, normal, current, next)};
+		if (!candidate || visited.find(*candidate) != std::end(visited)) break;
+		loop.emplace_back(*candidate);
+		visited.insert(*candidate);
+		current = next;
+		next = *candidate;
+	}
+	BRepBuilderAPI_MakePolygon makePolygon;
+	for (const auto idx : loop) makePolygon.Add(connectivity.vertices[idx]);
+	makePolygon.Close();
+	return makePolygon.Wire();
+}
+
+auto computeWires(const Connectivity& connectivity, const double deflection) -> std::vector<TopoDS_Wire> {
+	std::vector<TopoDS_Wire> result;
+	std::unordered_set<unsigned int> visited;
+	std::vector<unsigned int> vertexIndices;
+	for (const auto& fromTos : connectivity.vertexToVertices) vertexIndices.emplace_back(fromTos.first);
+	auto it{std::find_if(std::begin(vertexIndices), std::end(vertexIndices),[&visited](const unsigned int index) { return visited.find(index) == std::end(visited); })};
+	while (it != std::end(vertexIndices)) {
+		std::vector<unsigned int> cluster;
+		computeCluster(connectivity.vertexToVertices, *it, visited, cluster);
+		const auto wire{computeWire(connectivity, cluster, deflection)};
+		if (wire) result.emplace_back(*wire);
+		it = std::find_if(std::begin(vertexIndices), std::end(vertexIndices), [&visited](const unsigned int index) { return visited.find(index) == std::end(visited); });
 	}
 	return result;
 }
 
 auto computeProjectedSilhouette(const TopoDS_Compound& compound, const gp_Pln& xsectionPlane, const double projection, const double deflection) -> std::vector<TopoDS_Wire> {
-	std::vector<TopoDS_Wire> result;
-	const TopoDS_Shape shape{projectShape(compound, xsectionPlane, projection)};
-	std::vector<TopoDS_Edge> edges{discretizeEdges(shape, deflection)};
-	Connectivity connectivity{computeConnectivity(edges, deflection * 0.1)};
-	std::vector<std::vector<TopoDS_Wire>> allWires{computeAllWires(connectivity)};
-	for (const auto& wires : allWires) {
-		std::vector<TopoDS_Face> faces;
-		for (const auto& wire : wires) {
-			faces.emplace_back(BRepBuilderAPI_MakeFace(wire).Face());
-		}
-		std::vector<TopoDS_Face> unitedFaces{uniteFaces(faces)};
-		for (const auto& face : unitedFaces) {
-			for (const auto& wire : convertToWires(face)) result.emplace_back(wire);
-		}
-	}
-	return result;
+	const std::vector<TopoDS_Edge> edges{projectShape(compound, xsectionPlane, projection, deflection)};
+	Connectivity connectivity{computeConnectivity(edges, deflection)};
+	return computeWires(connectivity, deflection);
 }
 
 auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3>& planeNormal, const double planeDistance, const double deflection,
@@ -651,7 +865,6 @@ auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3
 	for (const auto& face : faces) {
 		for (const auto& wire : convertToWires(face)) result.emplace_back(wire);
 	}
-
 	return result;
 }
 
@@ -706,7 +919,7 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 	TopoDS_Compound compound{getSelectedSolids(namedSolids, select)};
 	const std::vector<ResultEntry> result{computeXSections(compound, planeNormal, planeDistances, deflection, offsets, projection)};
 	if (format == "xyz") writeXYZ(outFile, planeNormal, result);
-	else if (format == "ply") writePLY(outFile, result);
+	else if (format == "ply") writePLYEdges(outFile, result);
 }
 
 auto generateRange(const double start, const double end, const double count) -> std::vector<double> {
@@ -782,11 +995,11 @@ int main(int argc, char* argv[]) {
 		return EXIT_SUCCESS;
 	}
 	catch (const std::exception& ex) {
-		std::cout << ex.what() << std::endl;;
+		std::cerr << ex.what() << std::endl;;
 		return EXIT_FAILURE;
 	}
 	catch (...) {
-		std::cout << "Unexpected exception" << std::endl;
+		std::cerr << "Unexpected exception" << std::endl;
 		return EXIT_FAILURE;
 	}
 }
