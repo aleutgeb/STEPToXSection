@@ -72,6 +72,8 @@
 #include <numeric>
 #include <array>
 #include <cmath>
+#include <thread>
+#include <execution>
 #include <iostream>
 #include "cxxopts.hpp"
 
@@ -871,14 +873,29 @@ auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3
 auto computeXSections(const TopoDS_Compound& compound, const std::array<double, 3>& planeNormal, const std::vector<double>& planeDistances,
 		const double deflection, const std::vector<double>& offsets, const double projection) -> std::vector<ResultEntry> {
 	std::vector<ResultEntry> result;
+
+	const auto numThreads{std::thread::hardware_concurrency()};
+	std::vector<std::pair<unsigned int, unsigned int>> planesAndOffsets;
 	for (auto iPlane{0u}; iPlane < planeDistances.size(); ++iPlane) {
-		const auto& planeDistance{planeDistances[iPlane]};
 		for (auto iOffset{0u}; iOffset < offsets.size(); ++iOffset) {
-			const auto& offset{offsets[iOffset]};
-			const auto wires{computeXSection(compound, planeNormal, planeDistance, deflection, offset, projection)};
-			for (const auto& wire : wires) result.emplace_back(ResultEntry{iPlane, iOffset, wire});
+			planesAndOffsets.emplace_back(iPlane, iOffset);
 		}
 	}
+
+	std::vector<std::vector<ResultEntry>> tlsResult(numThreads);
+	std::vector<std::vector<std::pair<unsigned int, unsigned int>>> tlsPlanesAndOffsets(numThreads);
+	for (auto i{0u}; i < planesAndOffsets.size(); ++i) tlsPlanesAndOffsets[i % numThreads].emplace_back(planesAndOffsets[i]);
+	std::vector<unsigned int> threadIDs(numThreads);
+	std::iota(std::begin(threadIDs), std::end(threadIDs), 0u);
+	std::for_each(std::execution::par, std::begin(threadIDs), std::end(threadIDs), [&](const unsigned int threadID) {
+		for (const auto& pair : tlsPlanesAndOffsets[threadID]) {
+			const auto& planeDistance{planeDistances[pair.first]};
+			const auto& offset{offsets[pair.second]};
+			const auto wires{computeXSection(compound, planeNormal, planeDistance, deflection, offset, projection)};
+			for (const auto& wire : wires) tlsResult[threadID].emplace_back(ResultEntry{pair.first, pair.second, wire});
+		}
+	});
+	for (const auto& r : tlsResult) std::copy(std::begin(r), std::end(r), std::back_inserter(result));
 	return result;
 }
 
