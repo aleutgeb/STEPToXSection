@@ -156,15 +156,46 @@ void writePLY(const std::string& outFile, const std::vector<TopoDS_Edge>& edges)
 }
 
 void writePLYEdges(const std::string& outFile, const std::vector<ResultEntry>& result) {
-	std::vector<TopoDS_Edge> edges;
+	std::size_t edgesCount{0u};
 	for (const auto& entry : result) {
 		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) edges.emplace_back(TopoDS::Edge(explorer.Current()));
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) edgesCount++;
 	}
-	writePLY(outFile, edges);
+	std::ofstream ofs{outFile};
+	ofs << "ply" << "\n";
+	ofs << "format ascii 1.0" << "\n";
+	ofs << "element vertex " << edgesCount * 2 << "\n";
+	ofs << "property double x" << "\n";
+	ofs << "property double y" << "\n";
+	ofs << "property double z" << "\n";
+	ofs << "element edge " << edgesCount << "\n";
+	ofs << "property int vertex1" << "\n";
+	ofs << "property int vertex2" << "\n";
+	ofs << "property int plane_index" << "\n";
+	ofs << "property int surface_offset_index" << "\n";
+	ofs << "property int curve_offset_index" << "\n";
+	ofs << "end_header" << "\n";
+	for (const auto& entry : result) {
+		TopExp_Explorer explorer;
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+			const std::array<gp_XYZ, 2> points{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord(), BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+			for (const auto& p : points) ofs << p.X() << " " << p.Y() << " " << p.Z() << "\n";
+		}
+	}
+	edgesCount = 0u;
+	for (const auto& entry : result) {
+		TopExp_Explorer explorer;
+		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+			ofs << edgesCount * 2 << " " << edgesCount * 2 + 1;
+			ofs << " " << entry.plane << " " << entry.surface_offset << " " << entry.curve_offset << "\n";
+			edgesCount++;
+		}
+	}
+	ofs.close();
 }
 
-void writePLY(const std::string& outFile, const std::vector<ResultEntry>& result) {
+void writePLYPolygons(const std::string& outFile, const std::vector<ResultEntry>& result) {
 	std::vector<std::array<double, 3>> vertices;
 	std::vector<std::vector<unsigned int>> faces;
 	for (const auto& entry : result) {
@@ -1068,7 +1099,8 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 	TopoDS_Compound compound{getSelectedSolids(namedSolids, select)};
 	const std::vector<ResultEntry> result{computeXSections(compound, planeNormal, planeDistances, deflection, surfaceOffsets, curveOffsets, projection)};
 	if (format == "xyz") writeXYZ(outFile, planeNormal, result);
-	else if (format == "ply") writePLYEdges(outFile, result);
+	else if (format == "ply_edges") writePLYEdges(outFile, result);
+	else if (format == "ply_polygons") writePLYPolygons(outFile, result);
 }
 
 auto generateRange(const double start, const double end, const double count) -> std::vector<double> {
@@ -1089,7 +1121,7 @@ int main(int argc, char* argv[]) {
 	options.add_options()
 			("i,in", "Input file", cxxopts::value<std::string>())
 			("o,out", "Output file", cxxopts::value<std::string>())
-			("f,format", "Output file format (xyz or ply)", cxxopts::value<std::string>()->default_value("ply"))
+			("f,format", "Output file format (xyz, ply_edges, or ply_polygons)", cxxopts::value<std::string>()->default_value("ply_edges"))
 			("c,content", "List content (solids)")
 			("s,select", "Select solids by name or index (comma seperated list, index starts with 1)", cxxopts::value<std::vector<std::string>>())
 			("d,deflection", "Chordal tolerance used during discretization", cxxopts::value<double>())
@@ -1112,7 +1144,7 @@ int main(int argc, char* argv[]) {
 		else if (result.count("in") && result.count("out")) {
 			const auto inFile{result["in"].as<std::string>()}, outFile{result["out"].as<std::string>()};
 			const auto format{result["format"].as<std::string>()};
-			if (format != "xyz" && format != "ply") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
+			if (format != "xyz" && format != "ply_edges" && format != "ply_polygons") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
 			std::vector<std::string> select;
 			if (result.count("select")) select = result["select"].as<std::vector<std::string>>();
 			if (!result.count("deflection")) throw std::logic_error{std::string{"Missing option 'deflection'"}};
