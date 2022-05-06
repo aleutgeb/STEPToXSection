@@ -65,22 +65,22 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 
 | Planar cross section |
 | :--- |
-| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0` |
+| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply_edges -d 0.01 -p 1.0,0.0,0.0,0.0` |
 | ![Image Cross-Section-Spheres](examples/spheres/cross_section.png) |
 
 | Planar cross sections |
 | :--- |
-| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,-4.0,4.0,6` |
+| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply_edges -d 0.01 -p 1.0,0.0,0.0,-4.0,4.0,6` |
 | ![Image Cross-Sections-Spheres](examples/spheres/cross_sections.png) |
 
 | Positive in-plane offset curves |
 | :--- |
-| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -2 0.0,10.0,10` |
+| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply_edges -d 0.01 -p 1.0,0.0,0.0,0.0 -2 0.0,10.0,10` |
 | ![Image Positive-Offset-Curves-Spheres](examples/spheres/positive_offset_curves.png) |
 
 | Negative in-plane offset curves |
 | :--- |
-| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply -d 0.01 -p 1.0,0.0,0.0,0.0 -2 0.0,-4.9,5` |
+| `STEPToXSection.exe -i spheres.stp -o out.ply -f ply_edges -d 0.01 -p 1.0,0.0,0.0,0.0 -2 0.0,-4.9,5` |
 | ![Image Negative-Offset-Curves-Spheres](examples/spheres/negative_offset_curves.png) |
 
 ### Example Bone Pocket
@@ -91,37 +91,37 @@ Examples `spheres.stp` and `bone_pocket.stp` are from the `examples` directory.
 
 | Planar cross section |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,0.0` |
 | ![Image Cross-Section-Bone-Pocket](examples/bone_pocket/cross_section.png) |
 
 | Planar cross sections |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,-4.0,4.0,5` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,-4.0,4.0,5` |
 | ![Image Cross-Sections-Bone-Pocket](examples/bone_pocket/cross_sections.png) |
 
 | Positive in-plane offset curves |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -2 0.0,4.0,5` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,0.0 -2 0.0,4.0,5` |
 | ![Image Positive-Offset-Curves-Bone-Pocket](examples/bone_pocket/positive_offset_curves.png) |
 
 | Negative in-plane offset curves |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -2 0.0,-2.0,3` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,0.0 -2 0.0,-2.0,3` |
 | ![Image Negative-Offset-Curves-Bone-Pocket](examples/bone_pocket/negative_offset_curves.png) |
 
 | Silhouette of projected geometry within plane distance |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,0.0 -n 3.0` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,0.0 -n 3.0` |
 | ![Image Silhouette-Projected-Geometry-Bone-Pocket](examples/bone_pocket/silhouette_projected_geometry.png) |
 
 | Silhouettes of projected geometry within plane distance |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -n 1.0` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -n 1.0` |
 | ![Image Silhouettes-Projected-Geometry-Bone-Pocket](examples/bone_pocket/silhouettes_projected_geometry.png) |
 
 | Planar cross-sections using positive surface offset |
 | :--- |
-| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -1 1.5` |
+| `STEPToXSection.exe -i Bone_Pocket.stp -o out.ply -f ply_edges -d 0.01 -p 0.0,0.0,1.0,2.5,0.0,6 -1 1.5` |
 | ![Image Cross-Sections-Positive-Surface-Offset](examples/bone_pocket/cross_sections_positive_surface_offset.png) |
 
 ## Remarks

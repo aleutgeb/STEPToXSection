@@ -78,8 +78,11 @@
 #include <cmath>
 #include <thread>
 #include <execution>
+#include <mutex>
 #include <iostream>
 #include "cxxopts.hpp"
+
+static std::mutex g_mutex;
 
 struct NamedSolid {
 	NamedSolid(const TopoDS_Solid& s, const std::string& n) : solid{s}, name{n} {}
@@ -816,6 +819,7 @@ auto splitWireAtSelfIntersections(const TopoDS_Wire& wire, const TopoDS_Face& fa
 }
 
 auto computeOffsetWires(const TopoDS_Wire& wire, const double curveOffset) -> std::vector<TopoDS_Wire> {
+	std::lock_guard lock{g_mutex}; // BRepOffsetAPI_MakeOffset is not thread safe.
 	std::vector<TopoDS_Wire> result;
 	BRepOffsetAPI_MakeOffset makeOffset{wire, GeomAbs_Arc};
 	makeOffset.Perform(curveOffset);
@@ -1041,7 +1045,7 @@ auto computeXSections(const TopoDS_Compound& compound, const std::array<double, 
 	std::vector<TLS> allTLS(std::thread::hardware_concurrency());
 	for (auto iWork{0u}; iWork < work.size(); ++iWork) allTLS[iWork % allTLS.size()].input.emplace_back(work[iWork]);
 
-	std::for_each(std::execution::seq, std::begin(allTLS), std::end(allTLS), [&](TLS& tls) {
+	std::for_each(std::execution::par, std::begin(allTLS), std::end(allTLS), [&](TLS& tls) {
 		try {
 			for (const auto& input : tls.input) {
 				const auto& planeDistance{planeDistances[input.planeDistance]};
