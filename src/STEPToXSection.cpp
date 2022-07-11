@@ -437,17 +437,20 @@ void connectToEdges(Connectivity& connectivity, const double eps) {
 
 void removeOpenEdges(Connectivity& connectivity) {
 	std::vector<unsigned int> toRemove;
-	for (const auto& fromTo : connectivity.vertexToVertices) {
-		if (fromTo.second.size() < 2) toRemove.emplace_back(fromTo.first);
-	}
-	for (auto& fromTo : connectivity.vertexToVertices) {
-		auto& tos{fromTo.second};
-		for (const auto& rem : toRemove) {
-			auto it{std::find(std::begin(tos), std::end(tos), rem)};
-			if (it != std::end(tos)) tos.erase(it);
+	do {
+		toRemove.clear();
+		for (const auto& fromTo : connectivity.vertexToVertices) {
+			if (fromTo.second.size() < 2) toRemove.emplace_back(fromTo.first);
 		}
-	}
-	for (const auto& rem : toRemove) connectivity.vertexToVertices.erase(rem);
+		for (auto& fromTo : connectivity.vertexToVertices) {
+			auto& tos{fromTo.second};
+			for (const auto& rem : toRemove) {
+				auto it{std::find(std::begin(tos), std::end(tos), rem)};
+				if (it != std::end(tos)) tos.erase(it);
+			}
+		}
+		for (const auto& rem : toRemove) connectivity.vertexToVertices.erase(rem);
+	} while (!toRemove.empty());
 }
 
 void fixOpenEdges(Connectivity& connectivity, const double eps) {
