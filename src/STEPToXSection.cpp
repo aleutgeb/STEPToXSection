@@ -946,6 +946,9 @@ void addToOffsetShell(const std::vector<TopoDS_Face>& faces, const double surfac
 		}
 		else throw std::runtime_error{"Surface offset computation failed"};
 	}
+	catch (const StdFail_NotDone&) {
+		throw std::runtime_error{"Surface offset computation failed"};
+	}
 	catch (const Standard_ConstructionError&) { }
 }
 
@@ -987,10 +990,10 @@ auto computeOffsetShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, 
 	cut.Build();
 	TopoDS_Shape cutShape{cut.Shape()};
 	BRepOffsetAPI_MakeOffsetShape makeOffsetShape;
-	makeOffsetShape.PerformByJoin(cutShape, surfaceOffset, deflection, BRepOffset_Skin, false, false, GeomAbs_Arc, false);
 	try {
+		makeOffsetShape.PerformByJoin(cutShape, surfaceOffset, deflection, BRepOffset_Skin, false, false, GeomAbs_Arc, false);
 		if (makeOffsetShape.IsDone()) {
-			const TopoDS_Shape offsetShape{ makeOffsetShape.Shape() };
+			const TopoDS_Shape offsetShape{makeOffsetShape.Shape()};
 			if (!offsetShape.IsNull()) {
 				return offsetShape;
 			}
@@ -999,6 +1002,9 @@ auto computeOffsetShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, 
 		else throw std::runtime_error{"Surface offset computation failed"};
 	}
 	catch (const std::exception&) {
+		return computeOffsetShell(cutShape, surfaceOffset, deflection);
+	}
+	catch (const StdFail_NotDone&) {
 		return computeOffsetShell(cutShape, surfaceOffset, deflection);
 	}
 }
