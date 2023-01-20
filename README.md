@@ -1,7 +1,7 @@
 # STEPToXSection
 
 ## Description
-The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. It supports surface offsetting of the input geometry and in-plane curve offsetting. The in-plane base contour can also result from the orthogonal projection of geometries (silhouette) onto the plane within a specified maximum plane distance. The contour is a list of line segments. The supported output file formats are ply (edges or polygons) and xyz. In the case of xyz, two consecutive vertices belong to the same edge. A popular viewer for the different file types is MeshLab (https://www.meshlab.net). STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
+The program STEPToXSection is a command line utility to export the contour of a planar cross section of solids contained in STEP files. It supports surface offsetting of the input geometry and in-plane curve offsetting. The in-plane base contour can also result from the orthogonal projection of geometries (silhouette) onto the plane within a specified maximum plane distance. The contour is a list of line segments. The supported output file formats are ply (edges, polygons, or triangles) and xyz. In the case of xyz, two consecutive vertices belong to the same edge. A popular viewer for the different file types is MeshLab (https://www.meshlab.net). STEPToXSection is based on OpenCASCADE (https://www.opencascade.com). The program uses cxxops (https://github.com/jarro2783/cxxopts) for parsing the command line.
 
 ## Requirements
  * CMake installation (https://cmake.org)
@@ -33,8 +33,8 @@ Usage:
 
   -i, --in arg              Input file
   -o, --out arg             Output file
-  -f, --format arg          Output file format (xyz, ply_edges, or
-                            ply_polygons) (default: ply_edges)
+  -f, --format arg          Output file format (xyz, ply_edges, ply_polygons,
+                            or ply_triangles) (default: ply_edges)
   -c, --content             List content (solids)
   -s, --select arg          Select solids by name or index (comma seperated
                             list, index starts with 1)

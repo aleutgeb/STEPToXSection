@@ -95,7 +95,7 @@ struct ResultEntry {
 	unsigned int plane;
 	unsigned int surface_offset;
 	unsigned int curve_offset;
-	TopoDS_Wire  wire;
+	TopoDS_Face  face;
 };
 
 struct pair_hash {
@@ -123,16 +123,29 @@ struct CoordinatesLessOperator {
 	const double eps;
 };
 
+auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
+	std::vector<TopoDS_Wire> result;
+	Handle(TopTools_HSequenceOfShape) edges{new TopTools_HSequenceOfShape{}};
+	Handle(TopTools_HSequenceOfShape) wires{new TopTools_HSequenceOfShape{}};
+	TopExp_Explorer explorer;
+	for (explorer.Init(shape, TopAbs_EDGE); explorer.More(); explorer.Next()) edges->Append(TopoDS::Edge(explorer.Current()));
+	ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 0.001, Standard_False, wires);
+	for (int iWire{1}; iWire <= wires->Size(); ++iWire) result.emplace_back(TopoDS::Wire(wires->Value(iWire)));
+	return result;
+}
+
 void writeXYZ(const std::string& outFile, const std::array<double, 3>& planeNormal, const std::vector<ResultEntry>& result) {
 	std::ofstream ofs{outFile};
 	for (const auto& entry : result) {
-		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
-			const gp_XYZ p0{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
-			const gp_XYZ p1{BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
-			ofs << p0.X() << " " << p0.Y() << " " << p0.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
-			ofs << p1.X() << " " << p1.Y() << " " << p1.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+		for (const auto& wire : convertToWires(entry.face)) {
+			TopExp_Explorer explorer;
+			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+				const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+				const gp_XYZ p0{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
+				const gp_XYZ p1{BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+				ofs << p0.X() << " " << p0.Y() << " " << p0.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+				ofs << p1.X() << " " << p1.Y() << " " << p1.Z() << " " << planeNormal[0] << " " << planeNormal[1] << " " << planeNormal[2] << "\n";
+			}
 		}
 	}
 	ofs.close();
@@ -161,8 +174,10 @@ void writePLY(const std::string& outFile, const std::vector<TopoDS_Edge>& edges)
 void writePLYEdges(const std::string& outFile, const std::vector<ResultEntry>& result) {
 	std::size_t edgesCount{0u};
 	for (const auto& entry : result) {
-		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) edgesCount++;
+		for (const auto& wire : convertToWires(entry.face)) {
+			TopExp_Explorer explorer;
+			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) edgesCount++;
+		}
 	}
 	std::ofstream ofs{outFile};
 	ofs << "ply" << "\n";
@@ -179,20 +194,24 @@ void writePLYEdges(const std::string& outFile, const std::vector<ResultEntry>& r
 	ofs << "property int curve_offset_index" << "\n";
 	ofs << "end_header" << "\n";
 	for (const auto& entry : result) {
-		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
-			const std::array<gp_XYZ, 2> points{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord(), BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
-			for (const auto& p : points) ofs << p.X() << " " << p.Y() << " " << p.Z() << "\n";
+		for (const auto& wire : convertToWires(entry.face)) {
+			TopExp_Explorer explorer;
+			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+				const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+				const std::array<gp_XYZ, 2> points{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord(), BRep_Tool::Pnt(TopExp::LastVertex(edge)).Coord()};
+				for (const auto& p : points) ofs << p.X() << " " << p.Y() << " " << p.Z() << "\n";
+			}
 		}
 	}
 	edgesCount = 0u;
 	for (const auto& entry : result) {
-		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-			ofs << edgesCount * 2 << " " << edgesCount * 2 + 1;
-			ofs << " " << entry.plane << " " << entry.surface_offset << " " << entry.curve_offset << "\n";
-			edgesCount++;
+		for (const auto& wire : convertToWires(entry.face)) {
+			TopExp_Explorer explorer;
+			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+				ofs << edgesCount * 2 << " " << edgesCount * 2 + 1;
+				ofs << " " << entry.plane << " " << entry.surface_offset << " " << entry.curve_offset << "\n";
+				edgesCount++;
+			}
 		}
 	}
 	ofs.close();
@@ -202,13 +221,15 @@ void writePLYPolygons(const std::string& outFile, const std::vector<ResultEntry>
 	std::vector<std::array<double, 3>> vertices;
 	std::vector<std::vector<unsigned int>> faces;
 	for (const auto& entry : result) {
-		faces.push_back({});
-		TopExp_Explorer explorer;
-		for (explorer.Init(entry.wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
-			const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
-			const gp_XYZ p{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
-			faces.back().emplace_back(static_cast<unsigned int>(vertices.size()));
-			vertices.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
+		for (const auto& wire : convertToWires(entry.face)) {
+			faces.push_back({});
+			TopExp_Explorer explorer;
+			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
+				const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
+				const gp_XYZ p{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
+				faces.back().emplace_back(static_cast<unsigned int>(vertices.size()));
+				vertices.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
+			}
 		}
 	}
 
@@ -233,6 +254,45 @@ void writePLYPolygons(const std::string& outFile, const std::vector<ResultEntry>
 		ofs << " " << result[i].plane << " " << result[i].surface_offset << " " << result[i].curve_offset << "\n";
 	}
 	ofs.close();
+}
+
+auto tesselate(const TopoDS_Face& shape, const double deflection) -> std::vector<TopoDS_Face> {
+	std::vector<TopoDS_Face> result;
+	const bool relative{false};
+	const double angularDeflection{(std::acos(-1.0) / 180.0) * 15.0};
+	const bool parallel{true};
+	BRepMesh_IncrementalMesh mesh(shape, deflection, relative, angularDeflection, parallel);
+	for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next()) {
+		TopoDS_Face face{TopoDS::Face(explorer.Current())};
+		TopLoc_Location loc;
+		Handle(Poly_Triangulation) theTriangulation{BRep_Tool::Triangulation(face, loc)};
+		if (theTriangulation.IsNull()) continue;
+		for (auto i{1}; i <= theTriangulation->NbTriangles(); ++i) {
+			const auto& triangle{theTriangulation->Triangle(i)};
+			BRepBuilderAPI_MakePolygon makePolygon;
+			for (auto j{1}; j <= 3; ++j) {
+				gp_Pnt p{theTriangulation->Node(triangle(j))};
+				p.Transform(loc.Transformation());
+				makePolygon.Add(p);
+			}
+			makePolygon.Close();
+			if (makePolygon.IsDone()) {
+				TopoDS_Face newFace{BRepBuilderAPI_MakeFace{makePolygon.Wire()}.Face()};
+				if (face.Orientation() == TopAbs_REVERSED) newFace.Reverse();
+				result.emplace_back(newFace);
+			}
+		}
+	}
+	return result;
+}
+
+void writePLYTriangles(const std::string& outFile, const double deflection, const std::vector<ResultEntry>& result) {
+	std::vector<ResultEntry> triangleResult;
+	for (const auto& entry : result) {
+		const auto& faces{tesselate(entry.face, deflection)};
+		for (const auto& face : faces) triangleResult.emplace_back(ResultEntry{entry.plane, entry.surface_offset, entry.curve_offset, face});
+	}
+	writePLYPolygons(outFile, triangleResult);
 }
 
 void getNamedSolids(const TopLoc_Location& location, const std::string& prefix, unsigned int& id, const Handle(XCAFDoc_ShapeTool) shapeTool,
@@ -308,17 +368,6 @@ auto convertToPolygonOnPlane(const TopoDS_Wire& wire, const gp_Pln& xsectionPlan
 	makePolygon.Close();
 	if (makePolygon.IsDone()) return makePolygon.Wire();
 	else return wire;
-}
-
-auto convertToWires(const TopoDS_Shape& shape) -> std::vector<TopoDS_Wire> {
-	std::vector<TopoDS_Wire> result;
-	Handle(TopTools_HSequenceOfShape) edges{new TopTools_HSequenceOfShape{}};
-	Handle(TopTools_HSequenceOfShape) wires{new TopTools_HSequenceOfShape{}};
-	TopExp_Explorer explorer;
-	for (explorer.Init(shape, TopAbs_EDGE); explorer.More(); explorer.Next()) edges->Append(TopoDS::Edge(explorer.Current()));
-	ShapeAnalysis_FreeBounds::ConnectEdgesToWires(edges, 0.001, Standard_False, wires);
-	for (int iWire{1}; iWire <= wires->Size(); ++iWire) result.emplace_back(TopoDS::Wire(wires->Value(iWire)));
-	return result;
 }
 
 auto discretizeEdge(const TopoDS_Edge& edge, const gp_Trsf& transformation, const gp_Pln& xsectionPlane, double deflection) -> std::vector<TopoDS_Edge> {
@@ -1010,8 +1059,8 @@ auto computeOffsetShape(const TopoDS_Shape& shape, const gp_Pln& xsectionPlane, 
 }
 
 auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3>& planeNormal, const double planeDistance, const double deflection,
-		const double surfaceOffset, const double curveOffset, const double projection) -> std::vector<TopoDS_Wire> {
-	std::vector<TopoDS_Wire> result;
+		const double surfaceOffset, const double curveOffset, const double projection) -> std::vector<TopoDS_Face> {
+	std::vector<TopoDS_Face> result;
 	const gp_Pln xsectionPlane{planeNormal[0], planeNormal[1], planeNormal[2], planeDistance};
 	TopoDS_Shape shape;
 	if (std::abs(surfaceOffset) < 0.1 * deflection) shape = compound;
@@ -1021,7 +1070,10 @@ auto computeXSection(const TopoDS_Compound& compound, const std::array<double, 3
 	else wires = computeXSectionWires(shape, xsectionPlane, deflection);
 	std::vector<TopoDS_Face> faces{computeXSectionFaces(wires, xsectionPlane, deflection, curveOffset)};
 	for (const auto& face : faces) {
-		for (const auto& wire : convertToWires(face)) result.emplace_back(wire);
+		TopoDS_Face tmpFace{face};
+		gp_Dir normal{planeNormal[0], planeNormal[1], planeNormal[2]};
+		if (surfaceNormal(tmpFace).Dot(normal) < 0.0) tmpFace.Reverse();
+		result.emplace_back(tmpFace);
 	}
 	return result;
 }
@@ -1060,8 +1112,8 @@ auto computeXSections(const TopoDS_Compound& compound, const std::array<double, 
 				const auto& planeDistance{planeDistances[input.planeDistance]};
 				const auto& surfaceOffset{surfaceOffsets[input.surfaceOffset]};
 				const auto& curveOffset{curveOffsets[input.curveOffset]};
-				const auto wires{computeXSection(compound, planeNormal, planeDistance, deflection, surfaceOffset, curveOffset, projection)};
-				for (const auto& wire : wires) tls.output.emplace_back(ResultEntry{input.planeDistance, input.surfaceOffset, input.curveOffset, wire});
+				const auto faces{computeXSection(compound, planeNormal, planeDistance, deflection, surfaceOffset, curveOffset, projection)};
+				for (const auto& face : faces) tls.output.emplace_back(ResultEntry{input.planeDistance, input.surfaceOffset, input.curveOffset, face});
 			}
 		}
 		catch (const std::exception& ex) {
@@ -1114,6 +1166,7 @@ void write(const std::string& outFile, const std::vector<NamedSolid>& namedSolid
 	if (format == "xyz") writeXYZ(outFile, planeNormal, result);
 	else if (format == "ply_edges") writePLYEdges(outFile, result);
 	else if (format == "ply_polygons") writePLYPolygons(outFile, result);
+	else if (format == "ply_triangles") writePLYTriangles(outFile, deflection, result);
 }
 
 auto generateRange(const double start, const double end, const double count) -> std::vector<double> {
@@ -1134,7 +1187,7 @@ int main(int argc, char* argv[]) {
 	options.add_options()
 			("i,in", "Input file", cxxopts::value<std::string>())
 			("o,out", "Output file", cxxopts::value<std::string>())
-			("f,format", "Output file format (xyz, ply_edges, or ply_polygons)", cxxopts::value<std::string>()->default_value("ply_edges"))
+			("f,format", "Output file format (xyz, ply_edges, ply_polygons, or ply_triangles)", cxxopts::value<std::string>()->default_value("ply_edges"))
 			("c,content", "List content (solids)")
 			("s,select", "Select solids by name or index (comma seperated list, index starts with 1)", cxxopts::value<std::vector<std::string>>())
 			("d,deflection", "Chordal tolerance used during discretization", cxxopts::value<double>())
@@ -1157,7 +1210,7 @@ int main(int argc, char* argv[]) {
 		else if (result.count("in") && result.count("out")) {
 			const auto inFile{result["in"].as<std::string>()}, outFile{result["out"].as<std::string>()};
 			const auto format{result["format"].as<std::string>()};
-			if (format != "xyz" && format != "ply_edges" && format != "ply_polygons") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
+			if (format != "xyz" && format != "ply_edges" && format != "ply_polygons" && format != "ply_triangles") throw std::logic_error{std::string{"Format '"} + format + "' not supported"};
 			std::vector<std::string> select;
 			if (result.count("select")) select = result["select"].as<std::vector<std::string>>();
 			if (!result.count("deflection")) throw std::logic_error{std::string{"Missing option 'deflection'"}};
