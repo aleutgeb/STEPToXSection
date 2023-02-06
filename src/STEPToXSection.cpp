@@ -219,15 +219,16 @@ void writePLYEdges(const std::string& outFile, const std::vector<ResultEntry>& r
 
 void writePLYPolygons(const std::string& outFile, const std::vector<ResultEntry>& result) {
 	std::vector<std::array<double, 3>> vertices;
-	std::vector<std::vector<unsigned int>> faces;
-	for (const auto& entry : result) {
+	std::vector<std::pair<unsigned int, std::vector<unsigned int>>> faces;
+	for (auto iEntry{0u}; iEntry < result.size(); ++iEntry) {
+		const auto& entry{result[iEntry]};
 		for (const auto& wire : convertToWires(entry.face)) {
-			faces.push_back({});
+			faces.push_back({iEntry, {}});
 			TopExp_Explorer explorer;
 			for (explorer.Init(wire, TopAbs_EDGE); explorer.More(); explorer.Next()) {
 				const TopoDS_Edge edge{TopoDS::Edge(explorer.Current())};
 				const gp_XYZ p{BRep_Tool::Pnt(TopExp::FirstVertex(edge)).Coord()};
-				faces.back().emplace_back(static_cast<unsigned int>(vertices.size()));
+				faces.back().second.emplace_back(static_cast<unsigned int>(vertices.size()));
 				vertices.emplace_back(std::array<double, 3>{p.X(), p.Y(), p.Z()});
 			}
 		}
@@ -247,11 +248,10 @@ void writePLYPolygons(const std::string& outFile, const std::vector<ResultEntry>
 	ofs << "property int curve_offset_index" << "\n";
 	ofs << "end_header" << "\n";
 	for (const auto& v : vertices) ofs << v[0] << " " << v[1] << " " << v[2] << "\n";
-	for (std::size_t i{0u}; i < faces.size(); ++i) {
-		const auto& face{faces[i]};
-		ofs << face.size();
-		for (const auto& vIdx : face) ofs << " " << vIdx;
-		ofs << " " << result[i].plane << " " << result[i].surface_offset << " " << result[i].curve_offset << "\n";
+	for (const auto& face : faces) {
+		ofs << face.second.size();
+		for (const auto& vIdx : face.second) ofs << " " << vIdx;
+		ofs << " " << result[face.first].plane << " " << result[face.first].surface_offset << " " << result[face.first].curve_offset << "\n";
 	}
 	ofs.close();
 }
