@@ -1145,7 +1145,7 @@ auto getSelectedSolids(const std::vector<NamedSolid>& namedSolids, const std::ve
 				else {
 					try {
 						int index{std::stoi(sel)};
-						if (index < 1 || index > namedSolids.size()) throw std::logic_error{std::string{"Index out of range: "} + sel};
+						if (index < 1 || static_cast<size_t>(index) > namedSolids.size()) throw std::logic_error{std::string{"Index out of range: "} + sel};
 						builder.Add(compound, namedSolids[index - 1].solid);
 					}
 					catch (const std::invalid_argument&) {
