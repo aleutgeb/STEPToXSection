@@ -61,12 +61,13 @@ find_package(OCE)
 set(OPENCASCADE_VERSION "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
 
 if(OpenCASCADE_WITH_TBB)
-	set(TBB_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb2021.5-vc14-x64/lib" CACHE PATH "TBB library directory")
-	set(TBB_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb2021.5-vc14-x64/bin" CACHE PATH "TBB binary directory")
+	set(TBB_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb-2021.13.0-x64/lib" CACHE PATH "TBB library directory")
+	set(TBB_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb-2021.13.0-x64/bin" CACHE PATH "TBB binary directory")
+	set(TBB_LIBRARY_NAME "tbb12" CACHE STRING "TBB library name")
 endif()
 if(OpenCASCADE_WITH_FREEIMAGE)
-	set(FREEIMAGE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.17.0-vc14-64/lib" CACHE PATH "FreeImage library directory")
-	set(FREEIMAGE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.17.0-vc14-64/bin" CACHE PATH "FreeImage binary directory")
+	set(FREEIMAGE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.18.0-x64/lib" CACHE PATH "FreeImage library directory")
+	set(FREEIMAGE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.18.0-x64/bin" CACHE PATH "FreeImage binary directory")
 	option(FREEIMAGE_SHARED "link FreeImage as shared library" ON)
 endif()
 if(OpenCASCADE_WITH_FFMPEG)
@@ -75,19 +76,25 @@ if(OpenCASCADE_WITH_FFMPEG)
 	option(FFMPEG_SHARED "link FFmpeg as shared libraries" ON)
 endif()
 if(OpenCASCADE_WITH_FREETYPE)
-	set(FREETYPE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.5.5-vc14-64/lib" CACHE PATH "FreeType library directory")
-	set(FREETYPE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.5.5-vc14-64/bin" CACHE PATH "FreeType binary directory")
+	set(FREETYPE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.13.3-x64/lib" CACHE PATH "FreeType library directory")
+	set(FREETYPE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.13.3-x64/bin" CACHE PATH "FreeType binary directory")
 	option(FREETYPE_SHARED "link FreeType as shared library" ON)
 endif()
 
 include_directories(${OpenCASCADE_INCLUDE_DIR} ${OCE_INCLUDE_DIRS})
 
-# OpenCASCADE-config.cmake doesn't define this option yet, so define it here instead
+# OpenCASCADE-config.cmake doesn't define these options, so define them here instead
 option(OpenCASCADE_WITH_OPENVR "whether OpenCASCADE was built with OpenVR support" ON)
+option(OpenCASCADE_WITH_TBBMALLOC "whether OpenCASCADE was built with tbb_malloc support" OFF)
+option(OpenCASCADE_WITH_JEMALLOC "whether OpenCASCADE was built with Jemalloc support" ON)
 
 if(OpenCASCADE_WITH_OPENVR)
 	set(OPENVR_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/openvr-1.14.15-64/lib/win64" CACHE PATH "OpenVR library directory")
 	set(OPENVR_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/openvr-1.14.15-64/bin/win64" CACHE PATH "OpenVR binary directory")
+endif()
+if(OpenCASCADE_WITH_JEMALLOC)
+	set(JEMALLOC_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/jemalloc-vc14-64/lib" CACHE PATH "Jemalloc library directory")
+	set(JEMALLOC_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/jemalloc-vc14-64/bin" CACHE PATH "Jemalloc binary directory")
 endif()
 
 if(NOT OpenCASCADE_BUILD_SHARED_LIBS)
@@ -164,16 +171,20 @@ if(INSTALL_DEPENDENCIES)
 		endif()
 		if(OpenCASCADE_WITH_TBB)
 			install(FILES 
-				"${TBB_BIN_PREFIX}/tbb.dll"
-				"${TBB_BIN_PREFIX}/tbbmalloc.dll"
+				"${TBB_BIN_PREFIX}/${TBB_LIBRARY_NAME}.dll"
 				TYPE BIN)
+			if(OpenCASCADE_WITH_TBBMALLOC)
+				install(FILES 
+					"${TBB_BIN_PREFIX}/tbbmalloc.dll"
+					TYPE BIN)
+			endif()
 		endif()
 		if(OpenCASCADE_WITH_FREEIMAGE AND FREEIMAGE_SHARED)
 			install(FILES 
 				"${FREEIMAGE_BIN_PREFIX}/FreeImage.dll"
 				TYPE BIN)
 		endif()
-		if(OpenCASCADE_WITH_FREETYPE AND FREETYPE_SHARED)
+		if(OpenCASCADE_WITH_FREETYPE AND FREETYPE_SHARED AND OPENCASCADE_VERSION VERSION_LESS "7.8.0")
 			install(FILES 
 				"${FREETYPE_BIN_PREFIX}/freetype.dll"
 				TYPE BIN)
@@ -189,6 +200,11 @@ if(INSTALL_DEPENDENCIES)
 		if(OpenCASCADE_WITH_OPENVR)
 			install(FILES 
 				"${OPENVR_BIN_PREFIX}/openvr_api.dll"
+				TYPE BIN)
+		endif()
+		if(OpenCASCADE_WITH_JEMALLOC)
+			install(FILES 
+				"${JEMALLOC_BIN_PREFIX}/jemalloc.dll"
 				TYPE BIN)
 		endif()
 	endif()
