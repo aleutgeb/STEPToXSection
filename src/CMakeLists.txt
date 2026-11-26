@@ -22,7 +22,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110 - 1301  USA
 #
 
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.7)
 
 macro(update_target_library LIBRARIES SEARCH REPLACE)
 	foreach (LIBRARY ${LIBRARIES})
@@ -45,7 +45,7 @@ project (STEPToXSection)
 # begin of configuration section
 # change values according to path structure in OpenCASCADE installation
 #
-set(OPENCASCADE_PREFIX "C:/OpenCASCADE-7.5.0-vc14-64" CACHE PATH "OpenCASCADE prefix")
+set(OPENCASCADE_PREFIX "C:/OpenCASCADE/occt-vc143-64" CACHE PATH "OpenCASCADE prefix")
 if(WIN32)
 	set(CMAKE_INSTALL_BINDIR "." CACHE PATH "User executables (bin)")
 endif()
@@ -58,34 +58,43 @@ set(CMAKE_PREFIX_PATH "${OPENCASCADE_PREFIX};${CMAKE_PREFIX_PATH}")
 find_package(OpenCASCADE)
 find_package(OCE)
 
+set(OPENCASCADE_VERSION "${OpenCASCADE_MAJOR_VERSION}.${OpenCASCADE_MINOR_VERSION}.${OpenCASCADE_MAINTENANCE_VERSION}")
+
 if(OpenCASCADE_WITH_TBB)
-	set(TBB_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/tbb_2017.0.100/lib/intel64/vc14" CACHE PATH "TBB library directory")
-	set(TBB_BIN_PREFIX "${OPENCASCADE_PREFIX}/tbb_2017.0.100/bin/intel64/vc14" CACHE PATH "TBB binary directory")
+	set(TBB_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb-2021.13.0-x64/lib" CACHE PATH "TBB library directory")
+	set(TBB_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/tbb-2021.13.0-x64/bin" CACHE PATH "TBB binary directory")
+	set(TBB_LIBRARY_NAME "tbb12" CACHE STRING "TBB library name")
 endif()
 if(OpenCASCADE_WITH_FREEIMAGE)
-	set(FREEIMAGE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/freeimage-3.17.0-vc14-64/lib" CACHE PATH "FreeImage library directory")
-	set(FREEIMAGE_BIN_PREFIX "${OPENCASCADE_PREFIX}/freeimage-3.17.0-vc14-64/bin" CACHE PATH "FreeImage binary directory")
+	set(FREEIMAGE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.18.0-x64/lib" CACHE PATH "FreeImage library directory")
+	set(FREEIMAGE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freeimage-3.18.0-x64/bin" CACHE PATH "FreeImage binary directory")
 	option(FREEIMAGE_SHARED "link FreeImage as shared library" ON)
 endif()
 if(OpenCASCADE_WITH_FFMPEG)
-	set(FFMPEG_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/ffmpeg-3.3.4-64/lib" CACHE PATH "FFmpeg library directory")
-	set(FFMPEG_BIN_PREFIX "${OPENCASCADE_PREFIX}/ffmpeg-3.3.4-64/bin" CACHE PATH "FFmpeg binary directory")
+	set(FFMPEG_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/ffmpeg-3.3.4-64/lib" CACHE PATH "FFmpeg library directory")
+	set(FFMPEG_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/ffmpeg-3.3.4-64/bin" CACHE PATH "FFmpeg binary directory")
 	option(FFMPEG_SHARED "link FFmpeg as shared libraries" ON)
 endif()
 if(OpenCASCADE_WITH_FREETYPE)
-	set(FREETYPE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/freetype-2.5.5-vc14-64/lib" CACHE PATH "FreeType library directory")
-	set(FREETYPE_BIN_PREFIX "${OPENCASCADE_PREFIX}/freetype-2.5.5-vc14-64/bin" CACHE PATH "FreeType binary directory")
+	set(FREETYPE_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.13.3-x64/lib" CACHE PATH "FreeType library directory")
+	set(FREETYPE_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/freetype-2.13.3-x64/bin" CACHE PATH "FreeType binary directory")
 	option(FREETYPE_SHARED "link FreeType as shared library" ON)
 endif()
 
 include_directories(${OpenCASCADE_INCLUDE_DIR} ${OCE_INCLUDE_DIRS})
 
-# OpenCASCADE-config.cmake doesn't define this option yet, so define it here instead
+# OpenCASCADE-config.cmake doesn't define these options, so define them here instead
 option(OpenCASCADE_WITH_OPENVR "whether OpenCASCADE was built with OpenVR support" ON)
+option(OpenCASCADE_WITH_TBBMALLOC "whether OpenCASCADE was built with tbb_malloc support" OFF)
+option(OpenCASCADE_WITH_JEMALLOC "whether OpenCASCADE was built with Jemalloc support" ON)
 
 if(OpenCASCADE_WITH_OPENVR)
-	set(OPENVR_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/openvr-1.14.15-64/lib/win64" CACHE PATH "OpenVR library directory")
-	set(OPENVR_BIN_PREFIX "${OPENCASCADE_PREFIX}/openvr-1.14.15-64/bin/win64" CACHE PATH "OpenVR binary directory")
+	set(OPENVR_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/openvr-1.14.15-64/lib/win64" CACHE PATH "OpenVR library directory")
+	set(OPENVR_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/openvr-1.14.15-64/bin/win64" CACHE PATH "OpenVR binary directory")
+endif()
+if(OpenCASCADE_WITH_JEMALLOC)
+	set(JEMALLOC_LIBRARY_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/jemalloc-vc14-64/lib" CACHE PATH "Jemalloc library directory")
+	set(JEMALLOC_BIN_PREFIX "${OPENCASCADE_PREFIX}/../3rdparty-vc14-64/jemalloc-vc14-64/bin" CACHE PATH "Jemalloc binary directory")
 endif()
 
 if(NOT OpenCASCADE_BUILD_SHARED_LIBS)
@@ -103,7 +112,13 @@ if(NOT OpenCASCADE_BUILD_SHARED_LIBS)
 	endif()
 endif()
 
-set(LIBS TKernel TKMath TKBRep TKLCAF TKXDESTEP TKXCAF TKMesh TKTopAlgo TKG3d TKG2d TKGeomBase TKCDF TKXSBase TKSTEP TKSTEPBase TKSTEPAttr TKShHealing TKVCAF TKCAF TKService TKV3d TKGeomAlgo TKSTEP209 TKBO TKHLR TKOffset TKFillet TKBool TKFeat TKPrim)
+if(OPENCASCADE_VERSION VERSION_GREATER_EQUAL "7.8.0")
+	set(LIBS TKernel TKMath TKBRep TKLCAF TKDESTEP TKXCAF TKMesh TKTopAlgo TKDESTL TKG3d TKG2d TKGeomBase TKCDF TKXSBase TKShHealing TKVCAF TKCAF TKService TKV3d TKGeomAlgo TKBO TKHLR TKOffset TKFillet TKBool TKFeat)
+	set(RUNTIME_LIBS TKDE TKPrim)
+else()
+	set(LIBS TKernel TKMath TKBRep TKLCAF TKXDESTEP TKXCAF TKMesh TKTopAlgo TKG3d TKG2d TKGeomBase TKCDF TKXSBase TKSTEP TKSTEPBase TKSTEPAttr TKShHealing TKVCAF TKCAF TKService TKV3d TKGeomAlgo TKSTEP209 TKBO TKHLR TKOffset TKFillet TKBool TKFeat TKPrim)
+	set(RUNTIME_LIBS)
+endif()
 
 if(WIN32)
 	#
@@ -148,7 +163,7 @@ endif()
 if(INSTALL_DEPENDENCIES)
 	if(WIN32)
 		if(OpenCASCADE_BUILD_SHARED_LIBS)
-			foreach(LIB ${LIBS})
+			foreach(LIB ${LIBS} ${RUNTIME_LIBS})
 				# installing imported targets as TARGETS is not possible (see https://gitlab.kitware.com/cmake/cmake/-/issues/14311)
 				# so we must use FILES mode
 				install(FILES $<TARGET_FILE:${LIB}> TYPE BIN)
@@ -156,16 +171,20 @@ if(INSTALL_DEPENDENCIES)
 		endif()
 		if(OpenCASCADE_WITH_TBB)
 			install(FILES 
-				"${TBB_BIN_PREFIX}/tbb.dll"
-				"${TBB_BIN_PREFIX}/tbbmalloc.dll"
+				"${TBB_BIN_PREFIX}/${TBB_LIBRARY_NAME}.dll"
 				TYPE BIN)
+			if(OpenCASCADE_WITH_TBBMALLOC)
+				install(FILES 
+					"${TBB_BIN_PREFIX}/tbbmalloc.dll"
+					TYPE BIN)
+			endif()
 		endif()
 		if(OpenCASCADE_WITH_FREEIMAGE AND FREEIMAGE_SHARED)
 			install(FILES 
 				"${FREEIMAGE_BIN_PREFIX}/FreeImage.dll"
 				TYPE BIN)
 		endif()
-		if(OpenCASCADE_WITH_FREETYPE AND FREETYPE_SHARED)
+		if(OpenCASCADE_WITH_FREETYPE AND FREETYPE_SHARED AND OPENCASCADE_VERSION VERSION_LESS "7.8.0")
 			install(FILES 
 				"${FREETYPE_BIN_PREFIX}/freetype.dll"
 				TYPE BIN)
@@ -181,6 +200,11 @@ if(INSTALL_DEPENDENCIES)
 		if(OpenCASCADE_WITH_OPENVR)
 			install(FILES 
 				"${OPENVR_BIN_PREFIX}/openvr_api.dll"
+				TYPE BIN)
+		endif()
+		if(OpenCASCADE_WITH_JEMALLOC)
+			install(FILES 
+				"${JEMALLOC_BIN_PREFIX}/jemalloc.dll"
 				TYPE BIN)
 		endif()
 	endif()
